@@ -81,6 +81,15 @@ describe("Next.js compat: global-error", () => {
     expect(html).toContain("server page error");
   });
 
+  // Next.js: app-dir/errors — throw-string server component case
+  // Source: https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/errors/index.test.ts
+  it("string thrown in a server component reaches global-error with original message in dev", async () => {
+    const { res, html } = await fetchHtml(baseUrl, "/nextjs-compat/global-error-rsc-string");
+    expect(res.status).toBe(200);
+    expect(html).toContain("global-error");
+    expect(html).toContain("this is a test");
+  });
+
   // ── Client component SSR error ─────────────────────────────
   // Next.js: it('should render global error for error in client components during SSR', ...)
   // Source: https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/global-error/basic/index.test.ts#L51-L66
@@ -215,6 +224,16 @@ describe("Next.js compat: global-error (production preview)", () => {
     expect(html).toContain("global-error");
     expect(html).toContain("The specific message is omitted in production builds");
     expect(html).not.toContain("server page error");
+  });
+
+  // Next.js: app-dir/errors — throw-string server component case
+  // Source: https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/errors/index.test.ts
+  it("string thrown in a server component is sanitized in production global-error output", async () => {
+    const { res, html } = await fetchHtml(baseUrl, "/nextjs-compat/global-error-rsc-string");
+    expect(res.status).toBe(200);
+    expect(html).toContain("global-error");
+    expect(html).toContain("The specific message is omitted in production builds");
+    expect(html).not.toContain("this is a test");
   });
 
   it("client component SSR throw without local error.tsx renders global-error with 200", async () => {

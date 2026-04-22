@@ -3581,32 +3581,37 @@ describe("App Router next.config.js features (generateRscEntry)", () => {
     describe("runtime behavior", () => {
       let rscOnError: (error: unknown) => string | undefined;
 
-      beforeAll(() => {
-        const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
-
-        // Extract a top-level function from the generated code by matching
-        // balanced braces (simple regex can't handle nested braces).
-        function extractFunction(src: string, name: string): string {
-          const marker = `function ${name}(`;
-          const start = src.indexOf(marker);
-          if (start === -1) throw new Error(`Could not find ${name} in generated code`);
-          const braceStart = src.indexOf("{", start);
-          let depth = 0;
-          for (let i = braceStart; i < src.length; i++) {
-            if (src[i] === "{") depth++;
-            else if (src[i] === "}") depth--;
-            if (depth === 0) return src.slice(start, i + 1);
-          }
-          throw new Error(`Unbalanced braces in ${name}`);
+      // Extract a top-level function from the generated code by matching
+      // balanced braces (simple regex can't handle nested braces).
+      function extractFunction(src: string, name: string): string {
+        const marker = `function ${name}(`;
+        const start = src.indexOf(marker);
+        if (start === -1) throw new Error(`Could not find ${name} in generated code`);
+        const braceStart = src.indexOf("{", start);
+        let depth = 0;
+        for (let i = braceStart; i < src.length; i++) {
+          if (src[i] === "{") depth++;
+          else if (src[i] === "}") depth--;
+          if (depth === 0) return src.slice(start, i + 1);
         }
+        throw new Error(`Unbalanced braces in ${name}`);
+      }
 
+      function createRuntimeRscOnError(
+        nodeEnv: "development" | "production",
+        reportRequestError: (error: Error) => unknown = () => {},
+      ): (error: unknown, requestInfo?: unknown, errorContext?: unknown) => string | undefined {
+        const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
         const digestFn = extractFunction(code, "__errorDigest");
         const onErrorFn = extractFunction(code, "rscOnError");
-
         const body = `${digestFn}\n${onErrorFn}\nreturn rscOnError;`;
         // oxlint-disable-next-line no-new-func, @typescript-eslint/no-implied-eval -- reconstructing emitted runtime code is the behavior under test
-        const factory = new Function("process", body);
-        rscOnError = factory({ env: { NODE_ENV: "development" } });
+        const factory = new Function("process", "_reportRequestError", body);
+        return factory({ env: { NODE_ENV: nodeEnv } }, reportRequestError);
+      }
+
+      beforeAll(() => {
+        rscOnError = createRuntimeRscOnError("development");
       });
 
       it("returns the digest string for navigation errors (redirect/notFound)", () => {
@@ -3642,6 +3647,37 @@ describe("App Router next.config.js features (generateRscEntry)", () => {
         } finally {
           spy.mockRestore();
         }
+      });
+
+      it("reports string throws via request error reporting without swallowing the message", () => {
+        const reportRequestError = vi.fn();
+        const rscOnErrorWithReporter = createRuntimeRscOnError("development", reportRequestError);
+
+        const result = rscOnErrorWithReporter(
+          "this is a test",
+          { path: "/throw-string", method: "GET", headers: {} },
+          { routerKind: "App Router", routePath: "/throw-string", routeType: "render" },
+        );
+
+        expect(result).toBeUndefined();
+        expect(reportRequestError).toHaveBeenCalledTimes(1);
+        const [reportedError] = reportRequestError.mock.calls[0]!;
+        expect(reportedError).toBeInstanceOf(Error);
+        expect((reportedError as Error).message).toBe("this is a test");
+      });
+
+      it("generates stable production digests for both string throws and Error throws", () => {
+        const rscOnErrorProd = createRuntimeRscOnError("production");
+        const stringDigest = rscOnErrorProd("this is a test");
+        const stringDigestSecond = rscOnErrorProd("this is a test");
+
+        const errorWithSameMessage = new Error("this is a test");
+        errorWithSameMessage.stack = "";
+        const errorDigest = rscOnErrorProd(errorWithSameMessage);
+
+        expect(stringDigest).toMatch(/^\d+$/);
+        expect(stringDigestSecond).toBe(stringDigest);
+        expect(errorDigest).toBe(stringDigest);
       });
     });
   });
