@@ -50,10 +50,13 @@ import * as navigationShim from "../packages/vinext/src/shims/navigation.js";
 import {
   createHistoryStateWithNavigationMetadata,
   createHistoryStateWithPreviousNextUrl,
+  createInitialBfcacheIdMap,
+  createNextBfcacheIdMap,
   FRESH_APP_NAVIGATION_PAYLOAD_ORIGIN,
   VISITED_CACHE_APP_NAVIGATION_PAYLOAD_ORIGIN,
   createPendingNavigationCommit,
   isCacheRestorableAppPayloadMetadata,
+  readHistoryStateBfcacheIds,
   readHistoryStatePreviousNextUrl,
   readHistoryStateTraversalIndex,
   resolveInterceptionContextFromPreviousNextUrl,
@@ -134,6 +137,7 @@ function createResolvedElements(
 
 function createState(overrides: Partial<AppRouterState> = {}): AppRouterState {
   return {
+    bfcacheIds: {},
     elements: createResolvedElements("route:/initial", "/"),
     interception: null,
     layoutIds: [AppElementsWire.encodeLayoutId("/")],
@@ -3952,6 +3956,116 @@ describe("app browser entry previousNextUrl helpers", () => {
     expect(Object.hasOwn(nextState.elements, "slot:modal:/feed")).toBe(false);
   });
 
+  it("traverse: preserves bfcacheIds for planner-approved layout elements", async () => {
+    const modalSlotId = AppElementsWire.encodeSlotId("modal", "/feed");
+    const feedLayout = React.createElement("div", null, "feed layout");
+    const modalSlotBinding = {
+      ownerLayoutId: "layout:/feed",
+      slotId: modalSlotId,
+      state: "active",
+    } satisfies AppElementsSlotBinding;
+    const state = createState({
+      bfcacheIds: {
+        "layout:/": "0",
+        "layout:/feed": "_b_4_",
+        [modalSlotId]: "_b_5_",
+      },
+      elements: createResolvedElements(
+        "route:/feed",
+        "/",
+        null,
+        {
+          "layout:/": React.createElement("div", null, "root layout"),
+          "layout:/feed": feedLayout,
+          [modalSlotId]: React.createElement("div", null, "modal"),
+        },
+        ["layout:/", "layout:/feed"],
+        [modalSlotBinding],
+      ),
+      layoutIds: ["layout:/", "layout:/feed"],
+      navigationSnapshot: createClientNavigationRenderSnapshot("https://example.com/feed", {}),
+      routeId: "route:/feed",
+      slotBindings: [modalSlotBinding],
+    });
+    const pending = await createPendingNavigationCommit({
+      payloadOrigin: FRESH_APP_NAVIGATION_PAYLOAD_ORIGIN,
+      currentState: state,
+      nextElements: Promise.resolve(
+        createResolvedElements(
+          "route:/feed/comments",
+          "/",
+          null,
+          {
+            "page:/feed/comments": React.createElement("main", null, "comments"),
+          },
+          ["layout:/", "layout:/feed", "layout:/feed/comments"],
+          [
+            {
+              ownerLayoutId: "layout:/feed",
+              slotId: modalSlotId,
+              state: "default",
+            },
+          ],
+        ),
+      ),
+      navigationSnapshot: createClientNavigationRenderSnapshot(
+        "https://example.com/feed/comments",
+        {},
+      ),
+      operationLane: "traverse",
+      previousNextUrl: null,
+      renderId: 1,
+      type: "traverse",
+    });
+
+    const approval = approvePendingNavigationCommit({
+      activeNavigationId: 1,
+      currentState: state,
+      pending,
+      routeManifest: createRouteManifestForPendingCommit(state, pending),
+      startedNavigationId: 1,
+      targetHref: "https://example.com/feed/comments",
+    });
+
+    expect(approval.decision.disposition).toBe("commit");
+    if (approval.decision.disposition !== "commit") {
+      throw new Error("Expected visible commit approval");
+    }
+    expect(approval.decision.preserveElementIds).toEqual(["layout:/", "layout:/feed"]);
+    expect(approval.decision.preservePreviousSlotIds).toEqual([]);
+    if (approval.approvedCommit === null) {
+      throw new Error("Expected approved visible commit");
+    }
+    expect(approval.approvedCommit.action.bfcacheIds["layout:/feed"]).toBe("_b_4_");
+
+    // createPendingNavigationCommit pre-populates common layout ids today.
+    // Remove one to exercise reducer-level preservation for merged elements,
+    // and add a stale slot id to verify the merged element set bounds the map.
+    const reducerBfcacheIdProbe = {
+      ...approval.approvedCommit.action.bfcacheIds,
+      [modalSlotId]: "_b_5_",
+    };
+    delete reducerBfcacheIdProbe["layout:/feed"];
+    const commitWithoutPreservedLayoutBfcacheId = {
+      ...approval.approvedCommit,
+      action: {
+        ...approval.approvedCommit.action,
+        bfcacheIds: reducerBfcacheIdProbe,
+      },
+    };
+    expect(
+      Object.hasOwn(commitWithoutPreservedLayoutBfcacheId.action.bfcacheIds, "layout:/feed"),
+    ).toBe(false);
+    expect(commitWithoutPreservedLayoutBfcacheId.action.bfcacheIds[modalSlotId]).toBe("_b_5_");
+
+    const nextState = applyApprovedVisibleCommit(state, commitWithoutPreservedLayoutBfcacheId);
+    expect(nextState.elements["layout:/feed"]).toBe(feedLayout);
+    expect(nextState.bfcacheIds["layout:/"]).toBe("0");
+    expect(nextState.bfcacheIds["layout:/feed"]).toBe("_b_4_");
+    expect(Object.hasOwn(nextState.elements, modalSlotId)).toBe(false);
+    expect(Object.hasOwn(nextState.bfcacheIds, modalSlotId)).toBe(false);
+  });
+
   it("preserves planner-approved default parallel slots on approved navigate commits", async () => {
     const mountedSlot = React.createElement("div", null, "modal");
     const modalSlotBinding = {
@@ -3995,6 +4109,56 @@ describe("app browser entry previousNextUrl helpers", () => {
     expect(Object.hasOwn(nextState.elements, "slot:modal:/feed")).toBe(true);
     expect(nextState.elements["slot:modal:/feed"]).toBe(mountedSlot);
     expect(nextState.slotBindings).toEqual([modalSlotBinding]);
+  });
+
+  it("preserves bfcache ids for planner-approved default parallel slots", async () => {
+    const modalSlotId = AppElementsWire.encodeSlotId("modal", "/feed");
+    const mountedSlot = React.createElement("div", null, "modal");
+    const modalSlotBinding = {
+      ownerLayoutId: "layout:/feed",
+      slotId: modalSlotId,
+      state: "active",
+    } satisfies AppElementsSlotBinding;
+    const state = createState({
+      bfcacheIds: {
+        "layout:/": "0",
+        "layout:/feed": "_b_4_",
+        [modalSlotId]: "_b_5_",
+      },
+      elements: createResolvedElements(
+        "route:/feed",
+        "/",
+        null,
+        {
+          "layout:/": React.createElement("div", null, "root layout"),
+          "layout:/feed": React.createElement("div", null, "feed layout"),
+          [modalSlotId]: mountedSlot,
+        },
+        ["layout:/", "layout:/feed"],
+        [modalSlotBinding],
+      ),
+      layoutIds: ["layout:/", "layout:/feed"],
+      slotBindings: [modalSlotBinding],
+    });
+
+    const nextState = await applyApprovedTestCommit(state, {
+      extraEntries: {
+        "page:/feed/comments": React.createElement("main", null, "comments"),
+      },
+      layoutIds: ["layout:/", "layout:/feed", "layout:/feed/comments"],
+      rootLayoutTreePath: "/",
+      routeId: "route:/feed/comments",
+      slotBindings: [
+        {
+          ownerLayoutId: "layout:/feed",
+          slotId: modalSlotId,
+          state: "default",
+        },
+      ],
+    });
+
+    expect(nextState.elements[modalSlotId]).toBe(mountedSlot);
+    expect(nextState.bfcacheIds[modalSlotId]).toBe("_b_5_");
   });
 
   it("keeps previous slot binding proof when the target marks a preserved slot unmatched", async () => {
@@ -4077,7 +4241,13 @@ describe("app browser entry previousNextUrl helpers", () => {
   });
 
   it("does not preserve absent parallel slots when their owner layout is not approved", async () => {
+    const modalSlotId = AppElementsWire.encodeSlotId("modal", "/feed");
     const state = createState({
+      bfcacheIds: {
+        "layout:/": "0",
+        "layout:/feed": "_b_4_",
+        [modalSlotId]: "_b_5_",
+      },
       elements: createResolvedElements(
         "route:/feed",
         "/",
@@ -4085,7 +4255,7 @@ describe("app browser entry previousNextUrl helpers", () => {
         {
           "layout:/": React.createElement("div", null, "root layout"),
           "layout:/feed": React.createElement("div", null, "feed layout"),
-          "slot:modal:/feed": React.createElement("div", null, "modal"),
+          [modalSlotId]: React.createElement("div", null, "modal"),
         },
         ["layout:/", "layout:/feed"],
       ),
@@ -4102,6 +4272,149 @@ describe("app browser entry previousNextUrl helpers", () => {
     });
 
     expect(Object.hasOwn(nextState.elements, "slot:modal:/feed")).toBe(false);
+    expect(Object.hasOwn(nextState.bfcacheIds, modalSlotId)).toBe(false);
+  });
+});
+
+describe("app browser entry bfcacheId helpers", () => {
+  const rootLayoutId = AppElementsWire.encodeLayoutId("/");
+  const groupLayoutId = AppElementsWire.encodeLayoutId("/[group]");
+  const nestedGroupLayoutId = AppElementsWire.encodeLayoutId(
+    "/nextjs-compat/use-router-bfcache-id/[group]",
+  );
+  const pageX1Id = AppElementsWire.encodePageId("/x/1", null);
+  const pageX2Id = AppElementsWire.encodePageId("/x/2", null);
+  const pageY1Id = AppElementsWire.encodePageId("/y/1", null);
+
+  function createBfcacheElements(pageId: string): AppElements {
+    return createResolvedElements(
+      `route:${pageId.slice("page:".length)}`,
+      "/",
+      null,
+      {
+        [rootLayoutId]: React.createElement("div", null),
+        [groupLayoutId]: React.createElement("div", null),
+        [pageId]: React.createElement("main", null),
+      },
+      [rootLayoutId, groupLayoutId],
+    );
+  }
+
+  it("initializes every visible segment with the hydration placeholder", () => {
+    expect(createInitialBfcacheIdMap(createBfcacheElements(pageX1Id))).toEqual({
+      [rootLayoutId]: "0",
+      [groupLayoutId]: "0",
+      [pageX1Id]: "0",
+    });
+  });
+
+  it("preserves shared segment ids and mints ids for fresh segments", () => {
+    const current = {
+      [rootLayoutId]: "0",
+      [groupLayoutId]: "_b_4_",
+      [pageX1Id]: "_b_5_",
+    };
+
+    const next = createNextBfcacheIdMap({
+      current,
+      currentPathname: "/x/1",
+      elements: createBfcacheElements(pageX2Id),
+      nextPathname: "/x/2",
+    });
+
+    expect(next[rootLayoutId]).toBe("0");
+    expect(next[groupLayoutId]).toBe("_b_4_");
+    expect(next[pageX1Id]).toBeUndefined();
+    expect(next[pageX2Id]).toMatch(/^_b_\d+_$/);
+    expect(next[pageX2Id]).not.toBe("_b_5_");
+  });
+
+  it("mints a fresh layout id when a dynamic layout segment changes", () => {
+    const current = {
+      [rootLayoutId]: "0",
+      [groupLayoutId]: "_b_4_",
+      [pageX1Id]: "_b_5_",
+    };
+
+    const next = createNextBfcacheIdMap({
+      current,
+      currentPathname: "/x/1",
+      elements: createBfcacheElements(pageY1Id),
+      nextPathname: "/y/1",
+    });
+
+    expect(next[rootLayoutId]).toBe("0");
+    expect(next[groupLayoutId]).toMatch(/^_b_\d+_$/);
+    expect(next[groupLayoutId]).not.toBe("_b_4_");
+  });
+
+  it("mints a fresh nested layout id when a dynamic layout segment changes", () => {
+    const current = {
+      [rootLayoutId]: "0",
+      [nestedGroupLayoutId]: "0",
+      [pageX1Id]: "0",
+    };
+
+    const next = createNextBfcacheIdMap({
+      current,
+      currentPathname: "/nextjs-compat/use-router-bfcache-id/x/1",
+      elements: createResolvedElements(
+        "route:/nextjs-compat/use-router-bfcache-id/y/1",
+        "/",
+        null,
+        {
+          [pageY1Id]: React.createElement("main", null),
+        },
+        [rootLayoutId, nestedGroupLayoutId],
+      ),
+      nextPathname: "/nextjs-compat/use-router-bfcache-id/y/1",
+    });
+
+    expect(next[nestedGroupLayoutId]).toMatch(/^_b_\d+_$/);
+    expect(next[nestedGroupLayoutId]).not.toBe("0");
+  });
+
+  it("serializes and restores bfcache ids through history state", () => {
+    const state = createHistoryStateWithPreviousNextUrl({ __vinext_scrollY: 120 }, "/feed", {
+      [pageX1Id]: "_b_9_",
+    });
+
+    expect(state).toEqual({
+      __vinext_bfcacheIds: { [pageX1Id]: "_b_9_" },
+      __vinext_previousNextUrl: "/feed",
+      __vinext_scrollY: 120,
+    });
+    expect(readHistoryStateBfcacheIds(state)).toEqual({ [pageX1Id]: "_b_9_" });
+  });
+
+  it("uses restored history bfcache ids for traversal commits", async () => {
+    const currentState = createState({
+      bfcacheIds: {
+        [rootLayoutId]: "0",
+        [groupLayoutId]: "_b_4_",
+        [pageX2Id]: "_b_8_",
+      },
+      elements: createBfcacheElements(pageX2Id),
+      layoutIds: [rootLayoutId, groupLayoutId],
+      routeId: "route:/x/2",
+    });
+
+    const pending = await createPendingNavigationCommit({
+      payloadOrigin: FRESH_APP_NAVIGATION_PAYLOAD_ORIGIN,
+      currentState,
+      nextElements: Promise.resolve(createBfcacheElements(pageX1Id)),
+      navigationSnapshot: createClientNavigationRenderSnapshot("https://example.com/x/1", {}),
+      operationLane: "traverse",
+      renderId: 1,
+      restoredBfcacheIds: {
+        [rootLayoutId]: "0",
+        [groupLayoutId]: "_b_4_",
+        [pageX1Id]: "_b_5_",
+      },
+      type: "traverse",
+    });
+
+    expect(pending.action.bfcacheIds[pageX1Id]).toBe("_b_5_");
   });
 });
 

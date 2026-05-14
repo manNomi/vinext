@@ -12,6 +12,7 @@ import {
   ServerInsertedHTMLContext,
   appRouterInstance,
   clearServerInsertedHTML,
+  getBfcacheIdMapContext,
   renderServerInsertedHTML,
   setNavigationContext,
   useServerInsertedHTML,
@@ -40,6 +41,7 @@ import { deferUntilStreamConsumed } from "./app-page-stream.js";
 import { createSsrErrorMetaRenderer } from "./app-ssr-error-meta.js";
 import { getClientTraceMetadataHTML } from "./client-trace-metadata.js";
 import { AppElementsWire, type AppWireElements } from "./app-elements.js";
+import { createInitialBfcacheIdMap } from "./app-browser-state.js";
 import { ElementsContext, Slot } from "vinext/shims/slot";
 import { AppRouterContext } from "vinext/shims/internal/app-router-context";
 import { createClientReferencePreloader } from "./app-client-reference-preloader.js";
@@ -69,6 +71,7 @@ const clientReferencePreloader = createClientReferencePreloader({
     }
   },
 });
+const BfcacheIdMapContext = getBfcacheIdMapContext();
 
 function ssrErrorDigest(input: string): string {
   let hash = 5381;
@@ -311,11 +314,18 @@ export async function handleSsr(
           const wireElements = use(flightRoot);
           const elements = AppElementsWire.decode(wireElements);
           const metadata = AppElementsWire.readMetadata(elements);
-          return createReactElement(
+          const routeTree = createReactElement(
             ElementsContext.Provider,
             { value: elements },
             createReactElement(Slot, { id: metadata.routeId }),
           );
+          return BfcacheIdMapContext
+            ? createReactElement(
+                BfcacheIdMapContext.Provider,
+                { value: createInitialBfcacheIdMap(elements) },
+                routeTree,
+              )
+            : routeTree;
         }
 
         const flightRootElement = createReactElement(VinextFlightRoot);

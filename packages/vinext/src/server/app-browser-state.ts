@@ -35,12 +35,16 @@ import {
 import type { ClientNavigationRenderSnapshot } from "vinext/shims/navigation";
 import { normalizePathnameForRouteMatch } from "../routing/utils.js";
 import { normalizePath } from "./normalize-path.js";
+import type { BfcacheIdMap } from "./app-history-state.js";
+
 export {
   createHistoryStateWithNavigationMetadata,
   createHistoryStateWithPreviousNextUrl,
+  readHistoryStateBfcacheIds,
   readHistoryStatePreviousNextUrl,
   readHistoryStateTraversalIndex,
   resolveHistoryTraversalIntent,
+  type BfcacheIdMap,
   type HistoryTraversalIntent,
 } from "./app-history-state.js";
 
@@ -65,6 +69,7 @@ export type OperationRecord = PendingOperationRecord | CommittedOperationRecord;
 
 export type AppRouterState = {
   activeOperation: OperationRecord | null;
+  bfcacheIds: BfcacheIdMap;
   elements: AppElements;
   interception: AppElementsInterception | null;
   interceptionContext: string | null;
@@ -80,6 +85,7 @@ export type AppRouterState = {
 };
 
 export type AppRouterAction = {
+  bfcacheIds: BfcacheIdMap;
   cacheEntryReuseProof?: CacheEntryReuseProof;
   elements: AppElements;
   interception: AppElementsInterception | null;
@@ -136,6 +142,137 @@ type NonDispatchPendingNavigationCommitDispositionDecision = {
 type PendingNavigationCommitDispositionDecision =
   | DispatchPendingNavigationCommitDispositionDecision
   | NonDispatchPendingNavigationCommitDispositionDecision;
+
+let nextBfcacheId = 0;
+const INITIAL_BFCACHE_ID = "0";
+
+function rememberBfcacheId(value: string): void {
+  const match = /^_b_(\d+)_$/.exec(value);
+  if (!match) return;
+  nextBfcacheId = Math.max(nextBfcacheId, Number(match[1]));
+}
+
+function mintBfcacheId(): string {
+  nextBfcacheId += 1;
+  return `_b_${nextBfcacheId}_`;
+}
+
+function isBfcacheSegmentId(id: string): boolean {
+  const parsed = AppElementsWire.parseElementKey(id);
+  return (
+    parsed?.kind === "layout" ||
+    parsed?.kind === "page" ||
+    parsed?.kind === "slot" ||
+    parsed?.kind === "template"
+  );
+}
+
+function getPathSegments(pathname: string): string[] {
+  return pathname.split("/").filter(Boolean);
+}
+
+function getVisibleTreePathSegments(treePath: string): string[] {
+  return treePath
+    .split("/")
+    .filter(Boolean)
+    .filter((segment) => !(segment.startsWith("(") && segment.endsWith(")")));
+}
+
+function getPathPrefix(pathname: string, segmentCount: number): string {
+  if (segmentCount === 0) return "/";
+  const segments = getPathSegments(pathname).slice(0, segmentCount);
+  return `/${segments.join("/")}`;
+}
+
+function createBfcacheSegmentIdentity(id: string, pathname: string): string | null {
+  const parsed = AppElementsWire.parseElementKey(id);
+  if (!parsed) return null;
+
+  if (parsed.kind === "page") {
+    return `${id}@${pathname}`;
+  }
+
+  if (parsed.kind === "layout" || parsed.kind === "slot" || parsed.kind === "template") {
+    const segmentCount = getVisibleTreePathSegments(parsed.treePath).length;
+    return `${id}@${getPathPrefix(pathname, segmentCount)}`;
+  }
+
+  return null;
+}
+
+function collectBfcacheSegmentIds(elements: AppElements): string[] {
+  const ids = new Set(Object.keys(elements));
+  try {
+    for (const layoutId of AppElementsWire.readMetadata(elements).layoutIds) {
+      ids.add(layoutId);
+    }
+  } catch {
+    // Some low-level tests pass partial element maps without metadata.
+  }
+
+  return Array.from(ids).filter(isBfcacheSegmentId);
+}
+
+export function createInitialBfcacheIdMap(elements: AppElements): BfcacheIdMap {
+  const ids: Record<string, string> = {};
+  for (const id of collectBfcacheSegmentIds(elements)) {
+    ids[id] = INITIAL_BFCACHE_ID;
+  }
+  return ids;
+}
+
+export function createNextBfcacheIdMap(options: {
+  current: BfcacheIdMap;
+  currentPathname: string;
+  elements: AppElements;
+  nextPathname: string;
+  restored?: BfcacheIdMap | null;
+}): BfcacheIdMap {
+  for (const value of Object.values(options.current)) {
+    rememberBfcacheId(value);
+  }
+  for (const value of Object.values(options.restored ?? {})) {
+    rememberBfcacheId(value);
+  }
+
+  const ids: Record<string, string> = {};
+  for (const id of collectBfcacheSegmentIds(options.elements)) {
+    const currentIdentity = createBfcacheSegmentIdentity(id, options.currentPathname);
+    const nextIdentity = createBfcacheSegmentIdentity(id, options.nextPathname);
+    const currentValue = currentIdentity === nextIdentity ? options.current[id] : undefined;
+    // History traversals restore persisted ids first, matching segments keep
+    // their current id, and newly-created segments mint a fresh opaque id.
+    const value = options.restored?.[id] ?? currentValue ?? mintBfcacheId();
+    ids[id] = value;
+    rememberBfcacheId(value);
+  }
+  return ids;
+}
+
+export function preserveBfcacheIdsForMergedElements(options: {
+  elements: AppElements;
+  next: BfcacheIdMap;
+  previous: BfcacheIdMap;
+}): BfcacheIdMap {
+  const ids: Record<string, string> = {};
+  for (const id of collectBfcacheSegmentIds(options.elements)) {
+    const nextValue = options.next[id];
+    if (nextValue !== undefined) {
+      ids[id] = nextValue;
+      continue;
+    }
+
+    const previousValue = options.previous[id];
+    if (previousValue !== undefined) {
+      ids[id] = previousValue;
+      // Keep the module-level opaque-id counter ahead of restored ids so future
+      // mints cannot reuse a value after reducer-level preservation.
+      rememberBfcacheId(previousValue);
+    }
+  }
+  return ids;
+}
+
 function createOperationRecord(options: {
   id: number;
   lane: OperationLane;
@@ -463,6 +600,7 @@ export async function createPendingNavigationCommit(options: {
   // current visible previousNextUrl.
   previousNextUrl?: string | null;
   renderId: number;
+  restoredBfcacheIds?: BfcacheIdMap | null;
   type: "navigate" | "replace" | "traverse";
 }): Promise<PendingNavigationCommit> {
   const elements = await options.nextElements;
@@ -480,6 +618,13 @@ export async function createPendingNavigationCommit(options: {
 
   return {
     action: {
+      bfcacheIds: createNextBfcacheIdMap({
+        current: options.currentState.bfcacheIds,
+        currentPathname: options.currentState.navigationSnapshot.pathname,
+        elements,
+        nextPathname: options.navigationSnapshot.pathname,
+        restored: options.restoredBfcacheIds,
+      }),
       ...(cacheEntryReuseProof ? { cacheEntryReuseProof } : {}),
       elements,
       interception: metadata.interception,
