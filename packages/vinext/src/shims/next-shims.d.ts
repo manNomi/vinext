@@ -124,6 +124,7 @@ declare module "next/link" {
 
 declare module "next/navigation" {
   export function useRouter(): {
+    bfcacheId: string;
     push(href: string, options?: { scroll?: boolean }): void;
     replace(href: string, options?: { scroll?: boolean }): void;
     back(): void;

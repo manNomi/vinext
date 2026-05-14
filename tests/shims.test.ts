@@ -49,6 +49,15 @@ describe("next/navigation shim", () => {
     expect(typeof router.prefetch).toBe("function");
   });
 
+  it("useRouter() exposes the stable bfcacheId placeholder", async () => {
+    const { useRouter } = await import("../packages/vinext/src/shims/navigation.js");
+    const first = useRouter();
+    const second = useRouter();
+    expect(typeof first.bfcacheId).toBe("string");
+    expect(first.bfcacheId).toBe("0");
+    expect(second.bfcacheId).toBe(first.bfcacheId);
+  });
+
   // Next.js parity: refresh-reducer.ts invalidates the entire segment cache.
   // Our equivalent is clearClientNavigationCaches(), which router.refresh()
   // must call before re-fetching, or stale cached RSC payloads for sibling

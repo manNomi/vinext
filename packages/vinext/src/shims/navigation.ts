@@ -1235,6 +1235,7 @@ export async function navigateClientSide(
 // ---------------------------------------------------------------------------
 
 const _appRouter = {
+  bfcacheId: "0",
   push(href: string, options?: { scroll?: boolean }): void {
     assertSafeNavigationUrl(href);
     if (isServer) return;
