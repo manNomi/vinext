@@ -33,6 +33,8 @@ import { createClientReferencePreloader } from "./app-client-reference-preloader
 import { RSC_FORM_STATE_GLOBAL } from "./app-browser-hydration.js";
 import { createInitialBfcacheIdMap } from "./app-browser-state.js";
 
+const BfcacheIdMapContext = getBfcacheIdMapContext();
+
 export type FontPreload = {
   href: string;
   type: string;
@@ -222,7 +224,6 @@ export async function handleSsr(
           { value: elements },
           createReactElement(Slot, { id: metadata.routeId }),
         );
-        const BfcacheIdMapContext = getBfcacheIdMapContext();
         return BfcacheIdMapContext
           ? createReactElement(
               BfcacheIdMapContext.Provider,

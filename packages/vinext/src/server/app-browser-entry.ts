@@ -139,6 +139,7 @@ const VISITED_RESPONSE_CACHE_TTL = 5 * 60_000;
 const MAX_TRAVERSAL_CACHE_TTL = 30 * 60_000;
 const browserNavigationController = createAppBrowserNavigationController();
 const NavigationCommitSignal = browserNavigationController.NavigationCommitSignal;
+const BfcacheIdMapContext = getBfcacheIdMapContext();
 
 // Parses a URI-encoded JSON value carried in a response header (e.g.
 // `X-Vinext-Params`). Returns `null` on missing or malformed input so callers
@@ -253,6 +254,8 @@ function createNavigationCommitEffect(options: {
     } else if (historyUpdateMode === "push" && window.location.href !== targetHref) {
       pushHistoryStateWithoutNotify(historyState, "", href);
     } else if (historyUpdateMode === undefined) {
+      // Traversal and refresh commits don't change the URL, but still persist
+      // the latest bfcache id map so future history entries can restore it.
       replaceHistoryStateWithoutNotify(historyState, "", window.location.href);
     }
 
@@ -544,7 +547,6 @@ function BrowserRoot({
     ),
   );
 
-  const BfcacheIdMapContext = getBfcacheIdMapContext();
   const innerTree = BfcacheIdMapContext
     ? createElement(BfcacheIdMapContext.Provider, { value: treeState.bfcacheIds }, routeTree)
     : routeTree;

@@ -36,6 +36,10 @@ const _LAYOUT_SEGMENT_CTX_KEY = Symbol.for("vinext.layoutSegmentContext");
 const _SERVER_INSERTED_HTML_CTX_KEY = Symbol.for("vinext.serverInsertedHTMLContext");
 const _BFCACHE_ID_MAP_CTX_KEY = Symbol.for("vinext.bfcacheIdMapContext");
 const _BFCACHE_SEGMENT_ID_CTX_KEY = Symbol.for("vinext.bfcacheSegmentIdContext");
+const VINEXT_PREVIOUS_NEXT_URL_HISTORY_STATE_KEY = "__vinext_previousNextUrl";
+const VINEXT_BFCACHE_IDS_HISTORY_STATE_KEY = "__vinext_bfcacheIds";
+const VINEXT_SCROLL_X_HISTORY_STATE_KEY = "__vinext_scrollX";
+const VINEXT_SCROLL_Y_HISTORY_STATE_KEY = "__vinext_scrollY";
 
 /**
  * Map of parallel route key → child segments below the current layout.
@@ -1007,10 +1011,24 @@ function scrollToHash(hash: string): void {
     window.scrollTo(0, 0);
     return;
   }
-  const id = hash.slice(1);
-  const element = document.getElementById(id);
+  const encodedId = hash.startsWith("#") ? hash.slice(1) : hash;
+  let id = encodedId;
+  try {
+    id = decodeURIComponent(encodedId);
+  } catch {
+    // Match browser resilience for malformed hashes: fall back to the raw fragment.
+  }
+
+  if (id === "top") {
+    window.scrollTo(0, 0);
+    return;
+  }
+
+  const element = document.getElementById(id) ?? document.getElementsByName(id)[0];
   if (element) {
     element.scrollIntoView({ behavior: "auto" });
+  } else {
+    window.scrollTo(0, 0);
   }
 }
 
@@ -1115,9 +1133,28 @@ export function replaceHistoryStateWithoutNotify(
 function saveScrollPosition(): void {
   const state = window.history.state ?? {};
   replaceHistoryStateWithoutNotify(
-    { ...state, __vinext_scrollX: window.scrollX, __vinext_scrollY: window.scrollY },
+    {
+      ...state,
+      [VINEXT_SCROLL_X_HISTORY_STATE_KEY]: window.scrollX,
+      [VINEXT_SCROLL_Y_HISTORY_STATE_KEY]: window.scrollY,
+    },
     "",
   );
+}
+
+function createHashOnlyHistoryState(state: unknown): unknown {
+  if (!state || typeof state !== "object") return null;
+
+  const current = state as Record<string, unknown>;
+  const next: Record<string, unknown> = {};
+  if (VINEXT_PREVIOUS_NEXT_URL_HISTORY_STATE_KEY in current) {
+    next[VINEXT_PREVIOUS_NEXT_URL_HISTORY_STATE_KEY] =
+      current[VINEXT_PREVIOUS_NEXT_URL_HISTORY_STATE_KEY];
+  }
+  if (VINEXT_BFCACHE_IDS_HISTORY_STATE_KEY in current) {
+    next[VINEXT_BFCACHE_IDS_HISTORY_STATE_KEY] = current[VINEXT_BFCACHE_IDS_HISTORY_STATE_KEY];
+  }
+  return Object.keys(next).length > 0 ? next : null;
 }
 
 /**
@@ -1203,10 +1240,11 @@ export async function navigateClientSide(
   // Hash-only change: update URL and scroll to target, skip RSC fetch
   if (isHashOnlyChange(fullHref)) {
     const hash = fullHref.includes("#") ? fullHref.slice(fullHref.indexOf("#")) : "";
+    const historyState = createHashOnlyHistoryState(window.history.state);
     if (mode === "replace") {
-      replaceHistoryStateWithoutNotify(window.history.state, "", fullHref);
+      replaceHistoryStateWithoutNotify(historyState, "", fullHref);
     } else {
-      pushHistoryStateWithoutNotify(window.history.state, "", fullHref);
+      pushHistoryStateWithoutNotify(historyState, "", fullHref);
     }
     commitClientNavigationState();
     if (scroll) {
@@ -1353,40 +1391,42 @@ const _appRouter = {
 };
 
 const _appRouterByBfcacheId = new Map<string, typeof _appRouter>();
+const MAX_APP_ROUTER_BFCACHE_ID_CACHE_SIZE = 64;
 
 function createAppRouterForBfcacheId(bfcacheId: string): typeof _appRouter {
   if (bfcacheId === _appRouter.bfcacheId) return _appRouter;
 
   const cached = _appRouterByBfcacheId.get(bfcacheId);
-  if (cached) return cached;
+  if (cached) {
+    _appRouterByBfcacheId.delete(bfcacheId);
+    _appRouterByBfcacheId.set(bfcacheId, cached);
+    return cached;
+  }
 
   const router = { ..._appRouter, bfcacheId };
   _appRouterByBfcacheId.set(bfcacheId, router);
-  return router;
-}
-
-function hasReactDispatcher(): boolean {
-  const clientInternals = (
-    React as unknown as {
-      __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE?: { H: unknown };
+  if (_appRouterByBfcacheId.size > MAX_APP_ROUTER_BFCACHE_ID_CACHE_SIZE) {
+    const oldest = _appRouterByBfcacheId.keys().next().value;
+    if (oldest !== undefined) {
+      _appRouterByBfcacheId.delete(oldest);
     }
-  ).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
-  return clientInternals?.H != null;
+  }
+  return router;
 }
 
 /* oxlint-disable eslint-plugin-react-hooks/rules-of-hooks */
 function readBfcacheIdFromContext(): string {
   const segmentContext = getBfcacheSegmentIdContext();
   const idMapContext = getBfcacheIdMapContext();
-  if (!segmentContext || !idMapContext || !hasReactDispatcher()) return "0";
+  if (!segmentContext || !idMapContext) return "0";
 
   try {
     const segmentId = React.useContext(segmentContext);
     const idMap = React.useContext(idMapContext);
-    return (segmentId ? idMap?.[segmentId] : undefined) ?? "0";
+    if (!segmentId) return "0";
+    return idMap?.[segmentId] ?? "0";
   } catch {
-    // Low-level unit tests call useRouter() directly to exercise method
-    // behavior. Real React callers get the segment-scoped value from context.
+    // Low-level tests and direct module calls can hit this outside render.
     return "0";
   }
 }

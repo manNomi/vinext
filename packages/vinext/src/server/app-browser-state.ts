@@ -112,6 +112,7 @@ type PendingNavigationCommitDispositionDecision =
   | NonDispatchPendingNavigationCommitDispositionDecision;
 
 let nextBfcacheId = 0;
+const INITIAL_BFCACHE_ID = "0";
 
 function cloneHistoryState(state: unknown): HistoryStateRecord {
   if (!state || typeof state !== "object") {
@@ -224,7 +225,7 @@ function collectBfcacheSegmentIds(elements: AppElements): string[] {
 export function createInitialBfcacheIdMap(elements: AppElements): BfcacheIdMap {
   const ids: Record<string, string> = {};
   for (const id of collectBfcacheSegmentIds(elements)) {
-    ids[id] = "0";
+    ids[id] = INITIAL_BFCACHE_ID;
   }
   return ids;
 }
@@ -265,6 +266,8 @@ export function createNextBfcacheIdMap(options: {
     const currentIdentity = createBfcacheSegmentIdentity(id, options.currentPathname);
     const nextIdentity = createBfcacheSegmentIdentity(id, options.nextPathname);
     const currentValue = currentIdentity === nextIdentity ? options.current[id] : undefined;
+    // History traversals restore persisted ids first, matching segments keep
+    // their current id, and newly-created segments mint a fresh opaque id.
     const value = options.restored?.[id] ?? currentValue ?? mintBfcacheId();
     ids[id] = value;
     rememberBfcacheId(value);

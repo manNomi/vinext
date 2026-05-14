@@ -26,6 +26,7 @@ export const ChildrenContext = React.createContext<React.ReactNode>(null);
 export const ParallelSlotsContext = React.createContext<Readonly<
   Record<string, React.ReactNode>
 > | null>(null);
+const BfcacheSegmentIdContext = getBfcacheSegmentIdContext();
 
 type MergeElementsOptions = {
   clearAbsentSlots?: boolean;
@@ -112,7 +113,6 @@ export function Slot({
     notFound();
   }
 
-  const BfcacheSegmentIdContext = getBfcacheSegmentIdContext();
   const content = (
     <ParallelSlotsContext.Provider value={parallelSlots ?? null}>
       <ChildrenContext.Provider value={children ?? null}>{element}</ChildrenContext.Provider>

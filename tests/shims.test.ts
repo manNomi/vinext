@@ -133,6 +133,99 @@ describe("next/navigation shim", () => {
     }
   });
 
+  it("hash-only app router navigation preserves bfcache metadata without copying scroll restoration", async () => {
+    const previousWindow = (globalThis as any).window;
+    const previousDocument = (globalThis as any).document;
+    let historyState: unknown = {
+      __vinext_bfcacheIds: { "page:/current": "_b_1_" },
+      __vinext_previousNextUrl: "/feed",
+      customState: "drop-me",
+    };
+    const location = {
+      href: "http://localhost/current",
+      origin: "http://localhost",
+      pathname: "/current",
+      search: "",
+      hash: "",
+      assign: vi.fn(),
+      replace: vi.fn(),
+    };
+    const applyUrl = (url: string | URL | null | undefined) => {
+      if (url == null) return;
+      const next = new URL(String(url), location.href);
+      location.href = next.href;
+      location.pathname = next.pathname;
+      location.search = next.search;
+      location.hash = next.hash;
+    };
+    const pushState = vi.fn((data: unknown, _unused: string, url?: string | URL | null) => {
+      historyState = data;
+      applyUrl(url);
+    });
+    const replaceState = vi.fn((data: unknown, _unused: string, url?: string | URL | null) => {
+      historyState = data;
+      applyUrl(url);
+    });
+
+    const win = {
+      location,
+      history: {
+        get state() {
+          return historyState;
+        },
+        pushState,
+        replaceState,
+      },
+      scrollX: 12,
+      scrollY: 345,
+      scrollTo: vi.fn(),
+      addEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      __VINEXT_RSC_NAVIGATE__: vi.fn(),
+    };
+    const scrollIntoView = vi.fn();
+
+    (globalThis as any).window = win;
+    (globalThis as any).document = {
+      getElementById: vi.fn(() => ({ scrollIntoView })),
+      getElementsByName: vi.fn(() => []),
+    };
+
+    try {
+      vi.resetModules();
+      const { navigateClientSide } = await import("../packages/vinext/src/shims/navigation.js");
+
+      await navigateClientSide("#content", "push", true, true);
+
+      expect(replaceState).toHaveBeenCalledWith(
+        expect.objectContaining({ __vinext_scrollX: 12, __vinext_scrollY: 345 }),
+        "",
+        undefined,
+      );
+      expect(pushState).toHaveBeenCalledWith(
+        {
+          __vinext_bfcacheIds: { "page:/current": "_b_1_" },
+          __vinext_previousNextUrl: "/feed",
+        },
+        "",
+        "/current#content",
+      );
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      if (previousWindow === undefined) {
+        delete (globalThis as any).window;
+      } else {
+        (globalThis as any).window = previousWindow;
+      }
+      if (previousDocument === undefined) {
+        delete (globalThis as any).document;
+      } else {
+        (globalThis as any).document = previousDocument;
+      }
+      vi.resetModules();
+    }
+  });
+
   it("keeps pending render snapshot active when external history.pushState syncs the URL", async () => {
     const previousWindow = (globalThis as any).window;
     const win = {
