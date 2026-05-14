@@ -58,6 +58,35 @@ describe("next/navigation shim", () => {
     expect(second.bfcacheId).toBe(first.bfcacheId);
   });
 
+  it("useRouter() reads bfcacheId from the nearest segment context", async () => {
+    const React = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const navigation = await import("../packages/vinext/src/shims/navigation.js");
+    const BfcacheIdMapContext = navigation.getBfcacheIdMapContext();
+    const BfcacheSegmentIdContext = navigation.getBfcacheSegmentIdContext();
+    if (!BfcacheIdMapContext || !BfcacheSegmentIdContext) {
+      throw new Error("Expected bfcache contexts");
+    }
+
+    function Probe() {
+      return React.createElement("span", null, navigation.useRouter().bfcacheId);
+    }
+
+    expect(
+      renderToStaticMarkup(
+        React.createElement(
+          BfcacheIdMapContext.Provider,
+          { value: { "page:/x/1": "_b_7_" } },
+          React.createElement(
+            BfcacheSegmentIdContext.Provider,
+            { value: "page:/x/1" },
+            React.createElement(Probe),
+          ),
+        ),
+      ),
+    ).toBe("<span>_b_7_</span>");
+  });
+
   // Next.js parity: refresh-reducer.ts invalidates the entire segment cache.
   // Our equivalent is clearClientNavigationCaches(), which router.refresh()
   // must call before re-fetching, or stale cached RSC payloads for sibling
