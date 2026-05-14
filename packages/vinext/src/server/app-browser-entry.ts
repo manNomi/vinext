@@ -633,6 +633,8 @@ function createNavigationCommitEffect(options: {
     }
 
     if (!wroteHistoryState) {
+      // Traversal and refresh commits may keep the URL unchanged, but still
+      // persist the latest bfcache id map for future history restoration.
       syncCurrentHistoryStatePreviousNextUrl(previousNextUrl, bfcacheIds);
       stageClientParams(params);
       if (targetHistoryIndex !== undefined) {

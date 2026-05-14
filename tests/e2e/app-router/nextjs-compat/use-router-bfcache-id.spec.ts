@@ -94,4 +94,26 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await page.getByTestId("refresh").click();
     await expect(page.getByTestId("leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
   });
+
+  test("mints bfcacheIds for programmatic push and replace", async ({ page }) => {
+    await page.goto(`${BASE}${ROUTE}/x/1`);
+    await waitForAppRouterHydration(page);
+
+    const pushInitialBfcacheId = await page.getByTestId("leaf-bfcache-id").textContent();
+    await page.getByTestId("router-push-x-2").click();
+    await expect(page.getByTestId("pathname")).toHaveText(`${ROUTE}/x/2`);
+    const pushedBfcacheId = await page.getByTestId("leaf-bfcache-id").textContent();
+    expect(pushedBfcacheId).toMatch(/^_b_\d+_$/);
+    expect(pushedBfcacheId).not.toBe(pushInitialBfcacheId);
+
+    await page.goto(`${BASE}${ROUTE}/x/1`);
+    await waitForAppRouterHydration(page);
+
+    const replaceInitialBfcacheId = await page.getByTestId("leaf-bfcache-id").textContent();
+    await page.getByTestId("router-replace-x-2").click();
+    await expect(page.getByTestId("pathname")).toHaveText(`${ROUTE}/x/2`);
+    const replacedBfcacheId = await page.getByTestId("leaf-bfcache-id").textContent();
+    expect(replacedBfcacheId).toMatch(/^_b_\d+_$/);
+    expect(replacedBfcacheId).not.toBe(replaceInitialBfcacheId);
+  });
 });
