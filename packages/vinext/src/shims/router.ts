@@ -31,6 +31,7 @@ import {
   type UrlQuery,
   urlQueryToSearchParams,
 } from "../utils/query.js";
+import { matchRoutePattern, routePatternParts } from "../routing/route-pattern.js";
 import { scrollToHashTarget } from "./hash-scroll.js";
 
 /** basePath from next.config.js, injected by the plugin at build time */
@@ -291,6 +292,46 @@ function extractRouteParamNames(pattern: string): string[] {
   return names;
 }
 
+type RouteQueryNextData = {
+  page?: string;
+  query?: Record<string, string | string[] | undefined>;
+};
+
+function splitPathSegments(pathname: string): string[] {
+  return pathname.split("/").filter(Boolean);
+}
+
+function extractRouteParamsFromPath(
+  pattern: string,
+  pathname: string,
+): Record<string, string | string[]> | null {
+  return matchRoutePattern(splitPathSegments(pathname), routePatternParts(pattern));
+}
+
+function getRouteQueryFromNextData(
+  nextData: RouteQueryNextData | undefined,
+  resolvedPath: string,
+): Record<string, string | string[]> {
+  const routeQuery: Record<string, string | string[]> = {};
+  if (!nextData?.query || !nextData.page) return routeQuery;
+
+  const routeParamNames = extractRouteParamNames(nextData.page);
+  if (routeParamNames.length === 0) return routeQuery;
+
+  const currentRouteParams = extractRouteParamsFromPath(nextData.page, resolvedPath);
+  if (currentRouteParams) return currentRouteParams;
+
+  for (const key of routeParamNames) {
+    const value = nextData.query[key];
+    if (typeof value === "string") {
+      routeQuery[key] = value;
+    } else if (Array.isArray(value)) {
+      routeQuery[key] = [...value];
+    }
+  }
+  return routeQuery;
+}
+
 function getPathnameAndQuery(): {
   pathname: string;
   query: Record<string, string | string[]>;
@@ -312,21 +353,8 @@ function getPathnameAndQuery(): {
   // not the resolved path ("/posts/42"). __NEXT_DATA__.page holds the route
   // pattern and is updated by navigateClient() on every client-side navigation.
   const pathname = window.__NEXT_DATA__?.page ?? resolvedPath;
-  const routeQuery: Record<string, string | string[]> = {};
-  // Include dynamic route params from __NEXT_DATA__ (e.g., { id: "42" } from /posts/[id]).
-  // Only include keys that are part of the route pattern (not stale query params).
   const nextData = window.__NEXT_DATA__;
-  if (nextData && nextData.query && nextData.page) {
-    const routeParamNames = extractRouteParamNames(nextData.page);
-    for (const key of routeParamNames) {
-      const value = nextData.query[key];
-      if (typeof value === "string") {
-        routeQuery[key] = value;
-      } else if (Array.isArray(value)) {
-        routeQuery[key] = [...value];
-      }
-    }
-  }
+  const routeQuery = getRouteQueryFromNextData(nextData, resolvedPath);
   // URL search params always reflect the current URL
   const searchQuery: Record<string, string | string[]> = {};
   const params = new URLSearchParams(window.location.search);
