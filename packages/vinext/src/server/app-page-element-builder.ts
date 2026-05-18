@@ -78,6 +78,11 @@ export type BuildPageElementsOptions<
   rootUnauthorizedModule?: TModule | null;
   /** File-based metadata routes (favicon, manifest, sitemap, etc.). */
   metadataRoutes: readonly MetadataFileRoute[];
+  /**
+   * Configured next.config `basePath`. Threaded through `resolveAppPageHead`
+   * so file-based metadata route URLs emitted in <head> are prefixed.
+   */
+  basePath?: string;
 };
 
 /**
@@ -157,6 +162,7 @@ export async function buildPageElements<
     pageSearchParams,
     viewport: resolvedViewport,
   } = await resolveAppPageHead({
+    basePath: options.basePath ?? "",
     layoutModules: route.layouts,
     layoutTreePositions: route.layoutTreePositions,
     metadataRoutes,

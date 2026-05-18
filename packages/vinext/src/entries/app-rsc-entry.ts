@@ -334,6 +334,10 @@ const metadataRoutes = [
 ${metaRouteEntries.join(",\n")}
 ];
 
+// Hoisted ahead of __fallbackRenderer / buildPageElements so both can thread
+// the configured basePath through file-based metadata href emission.
+const __basePath = ${JSON.stringify(bp)};
+
 const rootNotFoundModule = ${rootNotFoundVar ? rootNotFoundVar : "null"};
 const rootForbiddenModule = ${rootForbiddenVar ? rootForbiddenVar : "null"};
 const rootUnauthorizedModule = ${rootUnauthorizedVar ? rootUnauthorizedVar : "null"};
@@ -343,6 +347,7 @@ const createRscOnErrorHandler = (request, pathname, routePath) =>
   createAppRscOnErrorHandler(_reportRequestError, request, pathname, routePath);
 
 const __fallbackRenderer = __createAppFallbackRenderer({
+  basePath: __basePath,
   rootBoundaries: {
     rootForbiddenModule,
     rootLayouts,
@@ -396,10 +401,10 @@ async function buildPageElements(route, params, routePath, pageRequest) {
     rootForbiddenModule: ${rootForbiddenVar ? rootForbiddenVar : "null"},
     rootUnauthorizedModule: ${rootUnauthorizedVar ? rootUnauthorizedVar : "null"},
     metadataRoutes,
+    basePath: __basePath,
   });
 }
 
-const __basePath = ${JSON.stringify(bp)};
 const __trailingSlash = ${JSON.stringify(ts)};
 const __i18nConfig = ${JSON.stringify(i18nConfig)};
 const __configRedirects = ${JSON.stringify(redirects)};
@@ -629,6 +634,7 @@ export default __createAppRscHandler({
     return __handleProgressiveServerActionRequest({
       actionId,
       allowedOrigins: __allowedOrigins,
+      basePath: __basePath,
       cleanPathname,
       clearRequestContext() {
         __clearRequestContext();
@@ -660,6 +666,7 @@ export default __createAppRscHandler({
     return __handleServerActionRscRequest({
       actionId,
       allowedOrigins: __allowedOrigins,
+      basePath: __basePath,
       buildPageElement({
         route: actionRoute,
         params: actionParams,
