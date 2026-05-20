@@ -229,6 +229,8 @@ export type RouteManifestRouteHandler = {
 export type RouteManifestLayout = {
   id: string;
   treePath: string;
+  patternParts: readonly string[];
+  paramNames: readonly string[];
   rootBoundaryId: RootBoundaryId | null;
 };
 
@@ -441,9 +443,12 @@ function createStaticSegmentGraph(routes: readonly AppRouteGraphRoute[]): Static
       if (existingLayout) {
         assertRouteManifestRootBoundary("layout", route, layoutId, existingLayout.rootBoundaryId);
       }
+      const layoutRouteParts = convertTreePathToRouteParts(treePath);
       const layout = {
         id: layoutId,
         treePath,
+        patternParts: layoutRouteParts.urlSegments,
+        paramNames: layoutRouteParts.params,
         rootBoundaryId: route.ids.rootBoundary,
       };
       layouts.set(layoutId, layout);
@@ -495,6 +500,32 @@ function createStaticSegmentGraph(routes: readonly AppRouteGraphRoute[]): Static
     for (const slot of route.parallelSlots) {
       const ownerLayoutId = findSlotOwnerLayoutId(route, slot);
       const defaultId = slot.defaultPath ? createAppRouteGraphDefaultId(slot.id) : null;
+      if (slot.layoutPath) {
+        // Materialize the slot-local layout as its own entry so consumers
+        // (e.g. typegen) can distinguish it from the owning layout. Note
+        // that this layout may have zero entries in `slots`: the slot
+        // itself is registered below against `ownerLayoutId`, which points
+        // to the ancestor layout that owns the slot prop.
+        const slotLayoutTreePath = createSlotLayoutTreePath(slot);
+        const slotLayoutId = createAppRouteGraphLayoutId(slotLayoutTreePath);
+        const existingLayout = layouts.get(slotLayoutId);
+        if (existingLayout) {
+          assertRouteManifestRootBoundary(
+            "layout",
+            route,
+            slotLayoutId,
+            existingLayout.rootBoundaryId,
+          );
+        }
+        const slotLayoutRouteParts = convertTreePathToRouteParts(slotLayoutTreePath);
+        layouts.set(slotLayoutId, {
+          id: slotLayoutId,
+          treePath: slotLayoutTreePath,
+          patternParts: slotLayoutRouteParts.urlSegments,
+          paramNames: slotLayoutRouteParts.params,
+          rootBoundaryId: route.ids.rootBoundary,
+        });
+      }
       slots.set(slot.id, {
         id: slot.id,
         key: slot.key,
@@ -565,6 +596,12 @@ function findSlotOwnerLayoutId(
 ): string | null {
   if (slot.layoutIndex < 0) return null;
   return route.ids.layouts[slot.layoutIndex] ?? null;
+}
+
+function createSlotLayoutTreePath(slot: AppRouteGraphParallelSlot): string {
+  const slotSegment = `@${slot.name}`;
+  if (slot.ownerTreePath === "/") return `/${slotSegment}`;
+  return `${slot.ownerTreePath}/${slotSegment}`;
 }
 
 function createRouteManifestSlotBinding(
@@ -1351,6 +1388,19 @@ function createAppRouteGraphTreePath(
   return `/${treePathSegments.join("/")}`;
 }
 
+function convertTreePathToRouteParts(treePath: string): {
+  urlSegments: string[];
+  params: string[];
+} {
+  if (treePath === "/") return { urlSegments: [], params: [] };
+  const segments = treePath.split("/").filter(Boolean);
+  const routeParts = convertSegmentsToRouteParts(segments);
+  if (!routeParts) {
+    throw new Error(`Invalid App Router layout tree path "${treePath}".`);
+  }
+  return { urlSegments: routeParts.urlSegments, params: routeParts.params };
+}
+
 /**
  * Compute the tree position (directory depth from app root) for each layout.
  * Root layout = 0, a layout at app/blog/ = 1, app/blog/(group)/ = 2.
@@ -2034,7 +2084,7 @@ function computeInterceptSourceMatchPattern(interceptParentDir: string, appDir: 
  * Used by computeInterceptTarget, convertSegmentsToRouteParts, and
  * hasRemainingVisibleSegments — keep this the single source of truth.
  */
-function isInvisibleSegment(segment: string): boolean {
+export function isInvisibleSegment(segment: string): boolean {
   if (segment === ".") return true;
   if (segment.startsWith("(") && segment.endsWith(")")) return true;
   if (segment.startsWith("@")) return true;

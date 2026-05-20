@@ -91,6 +91,7 @@ import { createRscClientReferenceLoadersPlugin } from "./plugins/rsc-client-refe
 import { createInstrumentationClientTransformPlugin } from "./plugins/instrumentation-client.js";
 import { createOptimizeImportsPlugin } from "./plugins/optimize-imports.js";
 import { createOgInlineFetchAssetsPlugin, ogAssetsPlugin } from "./plugins/og-assets.js";
+import { generateRouteTypes } from "./typegen.js";
 import {
   mergeOptimizeDepsExclude,
   SSR_EXTERNAL_REACT_ENTRIES,
@@ -689,6 +690,15 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
     return _generateClientEntry(pagesDir, nextConfig, fileMatcher);
   }
 
+  async function writeRouteTypes(): Promise<void> {
+    if (!hasAppDir) return;
+    await generateRouteTypes({
+      root,
+      appDir,
+      pageExtensions: nextConfig.pageExtensions,
+    });
+  }
+
   // Auto-register @vitejs/plugin-rsc when App Router is detected.
   // Check eagerly at call time using the same heuristic as config().
   // Must mirror the full detection logic: check {base}/app then {base}/src/app.
@@ -1024,6 +1034,9 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         instrumentationPath = findInstrumentationFile(root, fileMatcher);
         instrumentationClientPath = findInstrumentationClientFile(root, fileMatcher);
         middlewarePath = findMiddlewareFile(root, fileMatcher);
+        if (env?.command === "build") {
+          await writeRouteTypes();
+        }
 
         // Merge env from next.config.js with NEXT_PUBLIC_* env vars
         const defines = getNextPublicEnvDefines();
@@ -2432,6 +2445,42 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           invalidateRootParamsModule();
         }
 
+        let appRouteTypeGeneration: Promise<void> | null = null;
+        let appRouteTypeGenerationPending = false;
+
+        function warnRouteTypeGenerationFailure(error: unknown) {
+          server.config.logger.warn(
+            `[vinext] Failed to regenerate route types: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+
+        async function drainAppRouteTypeGeneration() {
+          while (appRouteTypeGenerationPending) {
+            appRouteTypeGenerationPending = false;
+            try {
+              await writeRouteTypes();
+            } catch (error) {
+              warnRouteTypeGenerationFailure(error);
+            }
+          }
+        }
+
+        function regenerateAppRouteTypes() {
+          appRouteTypeGenerationPending = true;
+          if (appRouteTypeGeneration) return;
+
+          appRouteTypeGeneration = drainAppRouteTypeGeneration().finally(() => {
+            appRouteTypeGeneration = null;
+            // A watcher event may have arrived after the drain loop's final
+            // check but before this finally runs; restart the loop if so.
+            if (appRouteTypeGenerationPending) regenerateAppRouteTypes();
+          });
+        }
+
+        regenerateAppRouteTypes();
+
         // Node throws on unhandled 'error' events on sockets. When a browser
         // drops the connection mid-response (common in dev: HMR triggers a
         // reload while an RSC stream is still flushing), the next res.write
@@ -2450,6 +2499,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           }
           if (hasAppDir && shouldInvalidateAppRouteFile(appDir, filePath, fileMatcher)) {
             invalidateAppRoutingModules();
+            regenerateAppRouteTypes();
           }
         });
         server.watcher.on("unlink", (filePath: string) => {
@@ -2458,6 +2508,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           }
           if (hasAppDir && shouldInvalidateAppRouteFile(appDir, filePath, fileMatcher)) {
             invalidateAppRoutingModules();
+            regenerateAppRouteTypes();
           }
         });
 
