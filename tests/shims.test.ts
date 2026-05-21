@@ -7924,6 +7924,40 @@ describe("matchConfigPattern", () => {
     expect(matchConfigPattern("/foo", "/foo/:path*")).toEqual({ path: "" });
     expect(matchConfigPattern("/foo", "/foo/:path+")).toBeNull();
   });
+
+  // Regression for #1331: a trailing slash on the request pathname must not
+  // hide a config rewrite/redirect/header source written without one. This
+  // mirrors Next.js's conditional `source + '(/)?'` suffix under
+  // `trailingSlash: true` — see `stripTrailingSlashForConfigMatch`.
+  it("strips a trailing slash on the incoming pathname before matching", async () => {
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
+    // Exact match: trailing slash on the pathname is ignored.
+    expect(matchConfigPattern("/about/", "/about")).toEqual({});
+    // :param match across the segment with a trailing slash on the pathname.
+    expect(matchConfigPattern("/blog/hello-world/", "/blog/:slug")).toEqual({
+      slug: "hello-world",
+    });
+    // Multi-segment :param with a trailing slash.
+    expect(matchConfigPattern("/blog/2024/my-post/", "/blog/:year/:slug")).toEqual({
+      year: "2024",
+      slug: "my-post",
+    });
+    // Regex-group pattern with a trailing slash.
+    expect(matchConfigPattern("/123/", "/:id(\\d+)")).toEqual({ id: "123" });
+  });
+
+  it("preserves the root path and catch-all semantics under trailing slash", async () => {
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
+    // The root pathname "/" stays "/" — never stripped to "".
+    expect(matchConfigPattern("/", "/")).toEqual({});
+    // Catch-alls already consume the trailing slash; the strip must not turn
+    // `/docs/` into `/docs` in a way that breaks zero-segment matching.
+    expect(matchConfigPattern("/docs/", "/docs/:path*")).toEqual({ path: "" });
+    // One-segment catch-all with trailing slash on the pathname.
+    expect(matchConfigPattern("/docs/intro/", "/docs/:path*")).toEqual({ path: "intro" });
+    // :path+ still requires at least one segment when the only "extra" was a slash.
+    expect(matchConfigPattern("/api/", "/api/:path+")).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -8685,6 +8719,29 @@ describe("matchHeaders", () => {
     // Request without the required header should not match
     const matched = matchHeaders("/about", rules, makeCtx());
     expect(matched).toEqual([]);
+  });
+
+  // Regression for #1331: under `trailingSlash: true` the incoming pathname
+  // arrives as `/about/`, but header source patterns are written without a
+  // trailing slash. `matchHeaders` must strip the slash before matching.
+  it("matches when the request pathname has a trailing slash", async () => {
+    const { matchHeaders } = await import("../packages/vinext/src/config/config-matchers.js");
+    const rules: any[] = [
+      {
+        source: "/about",
+        headers: [{ key: "x-static-header", value: "1" }],
+      },
+      {
+        source: "/api/:path*",
+        headers: [{ key: "x-api-header", value: "1" }],
+      },
+    ];
+
+    const aboutMatched = matchHeaders("/about/", rules, makeCtx());
+    expect(aboutMatched).toEqual([{ key: "x-static-header", value: "1" }]);
+
+    const apiMatched = matchHeaders("/api/users/", rules, makeCtx());
+    expect(apiMatched).toEqual([{ key: "x-api-header", value: "1" }]);
   });
 });
 
