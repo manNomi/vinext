@@ -2605,7 +2605,10 @@ describe("app browser navigation controller", () => {
       expect(stateRef.current.routeId).toBe("route:/photos/42");
       expect(stateRef.current.previousNextUrl).toBeNull();
       expect(syncHistoryStatePreviousNextUrl).toHaveBeenCalledTimes(1);
-      expect(syncHistoryStatePreviousNextUrl).toHaveBeenCalledWith(null);
+      expect(syncHistoryStatePreviousNextUrl).toHaveBeenCalledWith(
+        null,
+        stateRef.current.bfcacheIds,
+      );
     } finally {
       detach();
     }
