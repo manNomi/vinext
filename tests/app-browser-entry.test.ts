@@ -4285,9 +4285,13 @@ describe("app browser entry bfcacheId helpers", () => {
   const nestedGroupLayoutId = AppElementsWire.encodeLayoutId(
     "/nextjs-compat/use-router-bfcache-id/[group]",
   );
+  const catchAllLayoutId = AppElementsWire.encodeLayoutId("/docs/[...slug]");
+  const optionalCatchAllTemplateId = AppElementsWire.encodeTemplateId("/docs/[[...slug]]");
   const pageX1Id = AppElementsWire.encodePageId("/x/1", null);
   const pageX2Id = AppElementsWire.encodePageId("/x/2", null);
   const pageY1Id = AppElementsWire.encodePageId("/y/1", null);
+  const docsCatchAllPageId = AppElementsWire.encodePageId("/docs/[...slug]", null);
+  const docsOptionalCatchAllPageId = AppElementsWire.encodePageId("/docs/[[...slug]]", null);
 
   function createBfcacheElements(pageId: string): AppElements {
     return createResolvedElements(
@@ -4375,6 +4379,62 @@ describe("app browser entry bfcacheId helpers", () => {
 
     expect(next[nestedGroupLayoutId]).toMatch(/^_b_\d+_$/);
     expect(next[nestedGroupLayoutId]).not.toBe("0");
+  });
+
+  it("mints a fresh layout id when a catch-all segment value changes", () => {
+    const current = {
+      [rootLayoutId]: "0",
+      [catchAllLayoutId]: "_b_4_",
+      [docsCatchAllPageId]: "_b_5_",
+    };
+
+    const next = createNextBfcacheIdMap({
+      current,
+      currentPathname: "/docs/a/b",
+      elements: createResolvedElements(
+        "route:/docs/[...slug]",
+        "/",
+        null,
+        {
+          [catchAllLayoutId]: React.createElement("div", null),
+          [docsCatchAllPageId]: React.createElement("main", null),
+        },
+        [rootLayoutId, catchAllLayoutId],
+      ),
+      nextPathname: "/docs/a/c",
+    });
+
+    expect(next[rootLayoutId]).toBe("0");
+    expect(next[catchAllLayoutId]).toMatch(/^_b_\d+_$/);
+    expect(next[catchAllLayoutId]).not.toBe("_b_4_");
+  });
+
+  it("mints a fresh template id when an optional catch-all segment value changes", () => {
+    const current = {
+      [rootLayoutId]: "0",
+      [optionalCatchAllTemplateId]: "_b_8_",
+      [docsOptionalCatchAllPageId]: "_b_9_",
+    };
+
+    const next = createNextBfcacheIdMap({
+      current,
+      currentPathname: "/docs/a/b",
+      elements: createResolvedElements(
+        "route:/docs/[[...slug]]",
+        "/",
+        null,
+        {
+          [optionalCatchAllTemplateId]: React.createElement("div", null),
+          [docsOptionalCatchAllPageId]: React.createElement("main", null),
+        },
+        [rootLayoutId],
+      ),
+      nextPathname: "/docs/a/c",
+    });
+
+    expect(next[rootLayoutId]).toBe("0");
+    expect(next[optionalCatchAllTemplateId]).toMatch(/^_b_\d+_$/);
+    expect(next[optionalCatchAllTemplateId]).not.toBe("_b_8_");
   });
 
   it("serializes and restores bfcache ids through history state", () => {

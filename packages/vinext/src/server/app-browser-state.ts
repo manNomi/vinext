@@ -178,9 +178,27 @@ function getVisibleTreePathSegments(treePath: string): string[] {
     .filter((segment) => !(segment.startsWith("(") && segment.endsWith(")")));
 }
 
-function getPathPrefix(pathname: string, segmentCount: number): string {
-  if (segmentCount === 0) return "/";
-  const segments = getPathSegments(pathname).slice(0, segmentCount);
+function isCatchAllTreePathSegment(segment: string): boolean {
+  return (
+    (segment.startsWith("[...") && segment.endsWith("]") && segment.length > 5) ||
+    (segment.startsWith("[[...") && segment.endsWith("]]") && segment.length > 7)
+  );
+}
+
+function getTreePathIdentityPrefix(pathname: string, treePath: string): string {
+  const pathnameSegments = getPathSegments(pathname);
+  let consumedPathnameSegments = 0;
+
+  for (const segment of getVisibleTreePathSegments(treePath)) {
+    if (isCatchAllTreePathSegment(segment)) {
+      consumedPathnameSegments = pathnameSegments.length;
+      break;
+    }
+    consumedPathnameSegments += 1;
+  }
+
+  if (consumedPathnameSegments === 0) return "/";
+  const segments = pathnameSegments.slice(0, consumedPathnameSegments);
   return `/${segments.join("/")}`;
 }
 
@@ -193,8 +211,7 @@ function createBfcacheSegmentIdentity(id: string, pathname: string): string | nu
   }
 
   if (parsed.kind === "layout" || parsed.kind === "slot" || parsed.kind === "template") {
-    const segmentCount = getVisibleTreePathSegments(parsed.treePath).length;
-    return `${id}@${getPathPrefix(pathname, segmentCount)}`;
+    return `${id}@${getTreePathIdentityPrefix(pathname, parsed.treePath)}`;
   }
 
   return null;
