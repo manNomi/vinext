@@ -202,6 +202,11 @@ function getTreePathIdentityPrefix(pathname: string, treePath: string): string {
   return `/${segments.join("/")}`;
 }
 
+/**
+ * Legacy bridge for deriving a bfcache segment identity from AppElements wire
+ * keys. Keep wire-key parsing contained here until Vinext has a route-manifest
+ * semantic authority equivalent to Next.js CacheNode/segment-cache state.
+ */
 function createBfcacheSegmentIdentity(id: string, pathname: string): string | null {
   const parsed = AppElementsWire.parseElementKey(id);
   if (!parsed) return null;

@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LinkAccordion } from "../../components/link-accordion";
+import { refreshAction } from "../../actions";
 
 const base = "/nextjs-compat/use-router-bfcache-id";
 
@@ -26,6 +27,11 @@ export function LeafContent() {
       <button data-testid="refresh" onClick={() => router.refresh()} type="button">
         refresh
       </button>
+      <form action={refreshAction}>
+        <button data-testid="server-action-refresh" type="submit">
+          server action refresh
+        </button>
+      </form>
       <button
         data-testid="router-push-x-2"
         onClick={() => router.push(`${base}/x/2`)}

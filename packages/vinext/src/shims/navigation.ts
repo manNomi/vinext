@@ -1745,43 +1745,26 @@ const _appRouter = {
   },
 };
 
-const _appRouterByBfcacheId = new Map<string, typeof _appRouter>();
-const MAX_APP_ROUTER_BFCACHE_ID_CACHE_SIZE = 64;
-
-function createAppRouterForBfcacheId(bfcacheId: string): typeof _appRouter {
-  if (bfcacheId === _appRouter.bfcacheId) return _appRouter;
-
-  const cached = _appRouterByBfcacheId.get(bfcacheId);
-  if (cached) {
-    _appRouterByBfcacheId.delete(bfcacheId);
-    _appRouterByBfcacheId.set(bfcacheId, cached);
-    return cached;
-  }
-
-  const router = { ..._appRouter, bfcacheId };
-  _appRouterByBfcacheId.set(bfcacheId, router);
-  while (_appRouterByBfcacheId.size > MAX_APP_ROUTER_BFCACHE_ID_CACHE_SIZE) {
-    const oldest = _appRouterByBfcacheId.keys().next().value;
-    if (oldest === undefined) break;
-    _appRouterByBfcacheId.delete(oldest);
-  }
-  return router;
+function formatPublicBfcacheId(value: string | null | undefined): string {
+  if (!value || value === _appRouter.bfcacheId) return "_b_0_";
+  return value;
 }
 
 /* oxlint-disable eslint-plugin-react-hooks/rules-of-hooks */
 function readBfcacheIdFromContext(): string {
   const segmentContext = getBfcacheSegmentIdContext();
   const idMapContext = getBfcacheIdMapContext();
-  if (!segmentContext || !idMapContext || typeof React.useContext !== "function") return "0";
+  if (!segmentContext || !idMapContext || typeof React.useContext !== "function") {
+    return formatPublicBfcacheId(null);
+  }
 
   try {
     const segmentId = React.useContext(segmentContext);
     const idMap = React.useContext(idMapContext);
-    if (!segmentId) return "0";
-    return idMap?.[segmentId] ?? "0";
+    return formatPublicBfcacheId(segmentId ? idMap?.[segmentId] : null);
   } catch {
     // Low-level tests and direct module calls can hit this outside render.
-    return "0";
+    return formatPublicBfcacheId(null);
   }
 }
 /* oxlint-enable eslint-plugin-react-hooks/rules-of-hooks */
@@ -1799,18 +1782,29 @@ export const appRouterInstance = _appRouter;
  * App Router's useRouter — returns push/replace/back/forward/refresh.
  * Different from Pages Router's useRouter (next/router).
  *
- * Returns a stable router reference for the current bfcacheId. The base router
- * methods are shared, while `bfcacheId` is contextual to the nearest segment.
+ * Preserves the mounted AppRouterContext router as the authority for methods
+ * and layers the nearest segment's contextual `bfcacheId` on top.
  */
 export function useRouter() {
-  if (!AppRouterContext || typeof React.useContext !== "function") {
+  if (
+    !AppRouterContext ||
+    typeof React.useContext !== "function" ||
+    typeof React.useMemo !== "function"
+  ) {
     throw new Error("invariant expected app router to be mounted");
   }
   const router = React.useContext(AppRouterContext);
   if (router === null) {
     throw new Error("invariant expected app router to be mounted");
   }
-  return createAppRouterForBfcacheId(readBfcacheIdFromContext());
+  const bfcacheId = readBfcacheIdFromContext();
+  return React.useMemo(
+    () => ({
+      ...router,
+      bfcacheId,
+    }),
+    [router, bfcacheId],
+  );
 }
 
 /**

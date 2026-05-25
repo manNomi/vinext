@@ -15,6 +15,10 @@ async function revealAndClick(page: Page, href: string) {
   await page.locator(`a[href="${href}"]`).first().click();
 }
 
+function visibleTestId(page: Page, testId: string) {
+  return page.locator(`[data-testid="${testId}"]:visible`).first();
+}
+
 test.describe("Next.js compat: useRouter().bfcacheId", () => {
   test("mints bfcacheIds for fresh leaf navigations and restores them on history traversal", async ({
     page,
@@ -22,60 +26,62 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await page.goto(`${BASE}${ROUTE}/x/1`);
     await waitForAppRouterHydration(page);
 
-    await expect(page.getByTestId("leaf-bfcache-id")).toHaveText("0");
+    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText("_b_0_");
 
     await revealAndClick(page, `${ROUTE}/x/2`);
-    await expect(page.getByTestId("pathname")).toHaveText(`${ROUTE}/x/2`);
-    const x2BfcacheId = await page.getByTestId("leaf-bfcache-id").textContent();
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
+    const x2BfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
     expect(x2BfcacheId).toMatch(/^_b_\d+_$/);
+    await visibleTestId(page, "leaf-input").fill("x2-state");
 
     await revealAndClick(page, `${ROUTE}/x/1`);
-    await expect(page.getByTestId("pathname")).toHaveText(`${ROUTE}/x/1`);
-    const freshX1BfcacheId = await page.getByTestId("leaf-bfcache-id").textContent();
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/1`);
+    const freshX1BfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
     expect(freshX1BfcacheId).toMatch(/^_b_\d+_$/);
     expect(freshX1BfcacheId).not.toBe(x2BfcacheId);
 
     await page.goBack();
-    await expect(page.getByTestId("pathname")).toHaveText(`${ROUTE}/x/2`);
-    await expect(page.getByTestId("leaf-bfcache-id")).toHaveText(x2BfcacheId ?? "");
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
+    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(x2BfcacheId ?? "");
+    await expect(visibleTestId(page, "leaf-input")).toHaveValue("x2-state");
   });
 
   test("resets leaf form state when re-entering a route via fresh push", async ({ page }) => {
     await page.goto(`${BASE}${ROUTE}/x/1`);
     await waitForAppRouterHydration(page);
 
-    await page.getByTestId("leaf-input").fill("hello");
+    await visibleTestId(page, "leaf-input").fill("hello");
     await revealAndClick(page, `${ROUTE}/x/2`);
-    await expect(page.getByTestId("pathname")).toHaveText(`${ROUTE}/x/2`);
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
 
     await revealAndClick(page, `${ROUTE}/x/1`);
-    await expect(page.getByTestId("leaf-input")).toHaveValue("");
+    await expect(visibleTestId(page, "leaf-input")).toHaveValue("");
   });
 
   test("preserves shared layout state across sibling leaf navigations", async ({ page }) => {
     await page.goto(`${BASE}${ROUTE}/x/1`);
     await waitForAppRouterHydration(page);
 
-    await page.getByTestId("layout-input").fill("layout");
-    const xLayoutBfcacheId = await page.getByTestId("layout-bfcache-id").textContent();
+    await visibleTestId(page, "layout-input").fill("layout");
+    const xLayoutBfcacheId = await visibleTestId(page, "layout-bfcache-id").textContent();
 
     await revealAndClick(page, `${ROUTE}/x/2`);
-    await expect(page.getByTestId("pathname")).toHaveText(`${ROUTE}/x/2`);
-    await expect(page.getByTestId("layout-input")).toHaveValue("layout");
-    await expect(page.getByTestId("layout-bfcache-id")).toHaveText(xLayoutBfcacheId ?? "");
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
+    await expect(visibleTestId(page, "layout-input")).toHaveValue("layout");
+    await expect(visibleTestId(page, "layout-bfcache-id")).toHaveText(xLayoutBfcacheId ?? "");
   });
 
   test("resets shared layout state when navigating across dynamic groups", async ({ page }) => {
     await page.goto(`${BASE}${ROUTE}/x/1`);
     await waitForAppRouterHydration(page);
 
-    await page.getByTestId("layout-input").fill("layout");
-    const xLayoutBfcacheId = await page.getByTestId("layout-bfcache-id").textContent();
+    await visibleTestId(page, "layout-input").fill("layout");
+    const xLayoutBfcacheId = await visibleTestId(page, "layout-bfcache-id").textContent();
 
     await revealAndClick(page, `${ROUTE}/y/1`);
-    await expect(page.getByTestId("pathname")).toHaveText(`${ROUTE}/y/1`);
-    await expect(page.getByTestId("layout-input")).toHaveValue("");
-    const yLayoutBfcacheId = await page.getByTestId("layout-bfcache-id").textContent();
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/y/1`);
+    await expect(visibleTestId(page, "layout-input")).toHaveValue("");
+    const yLayoutBfcacheId = await visibleTestId(page, "layout-bfcache-id").textContent();
     expect(yLayoutBfcacheId).not.toBe(xLayoutBfcacheId);
   });
 
@@ -83,37 +89,57 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await page.goto(`${BASE}${ROUTE}/x/1`);
     await waitForAppRouterHydration(page);
 
-    const initialBfcacheId = await page.getByTestId("leaf-bfcache-id").textContent();
+    const initialBfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
+    await visibleTestId(page, "leaf-input").fill("refresh-state");
     await revealAndClick(page, `${ROUTE}/x/1#section`);
-    await expect(page.getByTestId("leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
+    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
 
     await revealAndClick(page, `${ROUTE}/x/1?q=2`);
-    await expect(page.getByTestId("search")).toHaveAttribute("data-value", "q=2");
-    await expect(page.getByTestId("leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
+    await expect(visibleTestId(page, "search")).toHaveAttribute("data-value", "q=2");
+    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
 
-    await page.getByTestId("refresh").click();
-    await expect(page.getByTestId("leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
+    await visibleTestId(page, "refresh").click();
+    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
+    await expect(visibleTestId(page, "leaf-input")).toHaveValue("refresh-state");
   });
 
   test("mints bfcacheIds for programmatic push and replace", async ({ page }) => {
     await page.goto(`${BASE}${ROUTE}/x/1`);
     await waitForAppRouterHydration(page);
 
-    const pushInitialBfcacheId = await page.getByTestId("leaf-bfcache-id").textContent();
-    await page.getByTestId("router-push-x-2").click();
-    await expect(page.getByTestId("pathname")).toHaveText(`${ROUTE}/x/2`);
-    const pushedBfcacheId = await page.getByTestId("leaf-bfcache-id").textContent();
+    const pushInitialBfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
+    await visibleTestId(page, "router-push-x-2").click();
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
+    const pushedBfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
     expect(pushedBfcacheId).toMatch(/^_b_\d+_$/);
     expect(pushedBfcacheId).not.toBe(pushInitialBfcacheId);
 
     await page.goto(`${BASE}${ROUTE}/x/1`);
     await waitForAppRouterHydration(page);
 
-    const replaceInitialBfcacheId = await page.getByTestId("leaf-bfcache-id").textContent();
-    await page.getByTestId("router-replace-x-2").click();
-    await expect(page.getByTestId("pathname")).toHaveText(`${ROUTE}/x/2`);
-    const replacedBfcacheId = await page.getByTestId("leaf-bfcache-id").textContent();
+    const replaceInitialBfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
+    await visibleTestId(page, "router-replace-x-2").click();
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
+    const replacedBfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
     expect(replacedBfcacheId).toMatch(/^_b_\d+_$/);
     expect(replacedBfcacheId).not.toBe(replaceInitialBfcacheId);
+  });
+
+  test("preserves leaf form state across a server action refresh", async ({ page }) => {
+    await page.goto(`${BASE}${ROUTE}/x/1`);
+    await waitForAppRouterHydration(page);
+
+    const initialBfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
+    await visibleTestId(page, "leaf-input").fill("server-action-state");
+
+    const actionResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" && response.url().includes(`${ROUTE}/x/1.rsc`),
+    );
+    await visibleTestId(page, "server-action-refresh").click();
+    await actionResponse;
+
+    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
+    await expect(visibleTestId(page, "leaf-input")).toHaveValue("server-action-state");
   });
 });
