@@ -15,13 +15,8 @@ import type { CacheEntryReuseProof } from "../server/cache-proof.js";
 import { getBfcacheIdMapContext, getBfcacheSegmentIdContext, notFound } from "./navigation.js";
 
 const EMPTY_ELEMENTS: AppElements = Object.freeze({});
-const EMPTY_BFCACHE_IDS: Readonly<Record<string, string>> = Object.freeze({});
 const warnedMissingEntryIds = new Set<string>();
 const warnedTransportMetadataEntryIds = new Set<string>();
-// Mirrors Next's cacheComponents Activity cache size for recently active
-// segment trees. This preserves DOM/React state for back/forward without
-// retaining an unbounded number of hidden subtrees.
-const MAX_SLOT_BFCACHE_ENTRIES = 3;
 
 export { UNMATCHED_SLOT };
 
@@ -39,13 +34,6 @@ export const ParallelSlotsContext = React.createContext<Readonly<
 > | null>(null);
 const BfcacheIdMapContext = getBfcacheIdMapContext();
 const BfcacheSegmentIdContext = getBfcacheSegmentIdContext();
-
-type SlotBfcacheEntry = {
-  content: React.ReactNode;
-  elements: AppElements;
-  next: SlotBfcacheEntry | null;
-  stateKey: string;
-};
 
 type MergeElementsOptions = {
   clearAbsentSlots?: boolean;
@@ -133,81 +121,9 @@ function warnTransportMetadataEntry(id: string): void {
   console.warn("[vinext] Transport metadata value found under App Router render entry: " + id);
 }
 
-function useSlotBfcache(
-  activeContent: React.ReactNode,
-  activeElements: AppElements,
-  activeStateKey: string,
-): SlotBfcacheEntry {
-  const [prevActiveEntry, setPrevActiveEntry] = React.useState<SlotBfcacheEntry>(() => ({
-    content: activeContent,
-    elements: activeElements,
-    next: null,
-    stateKey: activeStateKey,
-  }));
-
-  if (prevActiveEntry.elements === activeElements && prevActiveEntry.stateKey === activeStateKey) {
-    return prevActiveEntry;
-  }
-
-  const newActiveEntry: SlotBfcacheEntry = {
-    content: activeContent,
-    elements: activeElements,
-    next: null,
-    stateKey: activeStateKey,
-  };
-  let entryCount = 1;
-  let oldEntry: SlotBfcacheEntry | null = prevActiveEntry;
-  let clonedEntry = newActiveEntry;
-
-  while (oldEntry !== null && entryCount < MAX_SLOT_BFCACHE_ENTRIES) {
-    if (oldEntry.stateKey === activeStateKey) {
-      clonedEntry.next = oldEntry.next;
-      break;
-    }
-
-    entryCount += 1;
-    const entry: SlotBfcacheEntry = {
-      content: oldEntry.content,
-      elements: oldEntry.elements,
-      next: null,
-      stateKey: oldEntry.stateKey,
-    };
-    clonedEntry.next = entry;
-    clonedEntry = entry;
-    oldEntry = oldEntry.next;
-  }
-
-  setPrevActiveEntry(newActiveEntry);
-  return newActiveEntry;
-}
-
 function BfcacheSlotBoundary({ content, id }: { content: React.ReactNode; id: string }) {
-  const IdMapContext = BfcacheIdMapContext!;
   const SegmentContext = BfcacheSegmentIdContext!;
-  const elements = React.useContext(ElementsContext);
-  const bfcacheIds = React.useContext(IdMapContext) ?? EMPTY_BFCACHE_IDS;
-  const activeStateKey = bfcacheIds[id] ?? "0";
-  const activeEntry = useSlotBfcache(content, elements, activeStateKey);
-  const children: React.ReactNode[] = [];
-  let entry: SlotBfcacheEntry | null = activeEntry;
-
-  while (entry !== null) {
-    const entryBfcacheIds =
-      bfcacheIds[id] === entry.stateKey ? bfcacheIds : { ...bfcacheIds, [id]: entry.stateKey };
-    const mode = entry.stateKey === activeStateKey ? "visible" : "hidden";
-    children.push(
-      <React.Activity key={entry.stateKey} mode={mode} name={id}>
-        <ElementsContext.Provider value={entry.elements}>
-          <IdMapContext.Provider value={entryBfcacheIds}>
-            <SegmentContext.Provider value={id}>{entry.content}</SegmentContext.Provider>
-          </IdMapContext.Provider>
-        </ElementsContext.Provider>
-      </React.Activity>,
-    );
-    entry = entry.next;
-  }
-
-  return children;
+  return <SegmentContext.Provider value={id}>{content}</SegmentContext.Provider>;
 }
 
 export function mergeElements(

@@ -32,7 +32,6 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
     const x2BfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
     expect(x2BfcacheId).toMatch(/^_b_\d+_$/);
-    await visibleTestId(page, "leaf-input").fill("x2-state");
 
     await revealAndClick(page, `${ROUTE}/x/1`);
     await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/1`);
@@ -43,7 +42,6 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await page.goBack();
     await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
     await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(x2BfcacheId ?? "");
-    await expect(visibleTestId(page, "leaf-input")).toHaveValue("x2-state");
   });
 
   test("resets leaf form state when re-entering a route via fresh push", async ({ page }) => {
@@ -90,7 +88,6 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await waitForAppRouterHydration(page);
 
     const initialBfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
-    await visibleTestId(page, "leaf-input").fill("refresh-state");
     await revealAndClick(page, `${ROUTE}/x/1#section`);
     await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
 
@@ -100,7 +97,6 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
 
     await visibleTestId(page, "refresh").click();
     await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
-    await expect(visibleTestId(page, "leaf-input")).toHaveValue("refresh-state");
   });
 
   test("mints bfcacheIds for programmatic push and replace", async ({ page }) => {
