@@ -3271,6 +3271,7 @@ describe("App Router Static export", () => {
 
     const result = await staticExportApp({
       routes,
+      appDir,
       rscBundlePath,
       outDir: exportDir,
       config,
@@ -3288,6 +3289,9 @@ describe("App Router Static export", () => {
     expect(result.files).toContain("about.html");
     const aboutHtml = fs.readFileSync(path.join(exportDir, "about.html"), "utf-8");
     expect(aboutHtml).toContain("About");
+
+    // Explicit appDir enables static metadata asset export for App Router apps.
+    expect(result.files).toContain("metadata-dynamic-static/-/apple-icon.png");
   });
 
   it("pre-renders dynamic routes from generateStaticParams", async () => {

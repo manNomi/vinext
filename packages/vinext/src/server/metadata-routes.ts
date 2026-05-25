@@ -460,6 +460,46 @@ export function fillStaticMetadataSegment(appDirPath: string, lastSegment: strin
   return route === "" ? `/${filename}` : `${route}/${filename}`;
 }
 
+function getStaticMetadataFileConfig(lastSegment: string): {
+  metaType: string;
+  config: (typeof METADATA_FILE_MAP)[string];
+} | null {
+  const ext = path.posix.extname(lastSegment);
+  const baseName = lastSegment.slice(0, -ext.length || undefined);
+  for (const [metaType, config] of Object.entries(METADATA_FILE_MAP)) {
+    if (!config.staticExtensions.includes(ext)) continue;
+    if (!matchMetadataFileBaseName(metaType, baseName)) continue;
+    return { metaType, config };
+  }
+  return null;
+}
+
+/**
+ * Return the canonical prerender pathname for a static metadata file route.
+ * Dynamic segments are replaced with "-" so one stable file can represent all
+ * matching params, matching Next.js's App Router build behavior.
+ */
+export function getStaticMetadataPrerenderPathname(pathname: string): string | null {
+  const normalized = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const lastSlash = normalized.lastIndexOf("/");
+  const parentPathname = lastSlash > 0 ? normalized.slice(0, lastSlash) : "/";
+  const lastSegment = normalized.slice(lastSlash + 1);
+  if (!lastSegment) return null;
+
+  const match = getStaticMetadataFileConfig(lastSegment);
+  if (!match) return null;
+
+  if (parentPathname !== "/" && !match.config.nestable) {
+    return null;
+  }
+
+  if (!normalized.includes("[")) {
+    return normalized;
+  }
+
+  return fillStaticMetadataSegment(parentPathname, lastSegment);
+}
+
 // -------------------------------------------------------------------
 // Metadata route discovery
 // -------------------------------------------------------------------
