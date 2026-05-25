@@ -4351,6 +4351,7 @@ describe("app browser entry bfcacheId helpers", () => {
 
     const next = createNextBfcacheIdMap({
       current,
+      currentElements: createBfcacheElements(pageX1Id),
       currentPathname: "/x/1",
       elements: createBfcacheElements(pageX2Id),
       nextPathname: "/x/2",
@@ -4372,6 +4373,7 @@ describe("app browser entry bfcacheId helpers", () => {
 
     const next = createNextBfcacheIdMap({
       current,
+      currentElements: createBfcacheElements(pageX1Id),
       currentPathname: "/x/1",
       elements: createBfcacheElements(pageY1Id),
       nextPathname: "/y/1",
@@ -4391,6 +4393,15 @@ describe("app browser entry bfcacheId helpers", () => {
 
     const next = createNextBfcacheIdMap({
       current,
+      currentElements: createResolvedElements(
+        "route:/nextjs-compat/use-router-bfcache-id/x/1",
+        "/",
+        null,
+        {
+          [pageX1Id]: React.createElement("main", null),
+        },
+        [rootLayoutId, nestedGroupLayoutId],
+      ),
       currentPathname: "/nextjs-compat/use-router-bfcache-id/x/1",
       elements: createResolvedElements(
         "route:/nextjs-compat/use-router-bfcache-id/y/1",
@@ -4417,6 +4428,16 @@ describe("app browser entry bfcacheId helpers", () => {
 
     const next = createNextBfcacheIdMap({
       current,
+      currentElements: createResolvedElements(
+        "route:/docs/[...slug]",
+        "/",
+        null,
+        {
+          [catchAllLayoutId]: React.createElement("div", null),
+          [docsCatchAllPageId]: React.createElement("main", null),
+        },
+        [rootLayoutId, catchAllLayoutId],
+      ),
       currentPathname: "/docs/a/b",
       elements: createResolvedElements(
         "route:/docs/[...slug]",
@@ -4445,6 +4466,16 @@ describe("app browser entry bfcacheId helpers", () => {
 
     const next = createNextBfcacheIdMap({
       current,
+      currentElements: createResolvedElements(
+        "route:/docs/[[...slug]]",
+        "/",
+        null,
+        {
+          [optionalCatchAllTemplateId]: React.createElement("div", null),
+          [docsOptionalCatchAllPageId]: React.createElement("main", null),
+        },
+        [rootLayoutId],
+      ),
       currentPathname: "/docs/a/b",
       elements: createResolvedElements(
         "route:/docs/[[...slug]]",
@@ -4462,6 +4493,59 @@ describe("app browser entry bfcacheId helpers", () => {
     expect(next[rootLayoutId]).toBe("0");
     expect(next[optionalCatchAllTemplateId]).toMatch(/^_b_\d+_$/);
     expect(next[optionalCatchAllTemplateId]).not.toBe("_b_8_");
+  });
+
+  it("mints a fresh intercepted slot id when the active slot target changes", () => {
+    const feedLayoutId = AppElementsWire.encodeLayoutId("/feed");
+    const modalSlotId = AppElementsWire.encodeSlotId("modal", "/feed");
+    const modalSlotBinding = {
+      ownerLayoutId: feedLayoutId,
+      slotId: modalSlotId,
+      state: "active",
+    } satisfies AppElementsSlotBinding;
+    const currentElements = createResolvedElements(
+      "route:/photos/42",
+      "/",
+      "/feed",
+      {
+        [rootLayoutId]: React.createElement("div", null),
+        [feedLayoutId]: React.createElement("div", null),
+        [modalSlotId]: React.createElement("aside", null),
+      },
+      [rootLayoutId, feedLayoutId],
+      [modalSlotBinding],
+      createInterceptionProof("/feed", "/photos/42", modalSlotId),
+    );
+    const nextElements = createResolvedElements(
+      "route:/photos/43",
+      "/",
+      "/feed",
+      {
+        [rootLayoutId]: React.createElement("div", null),
+        [feedLayoutId]: React.createElement("div", null),
+        [modalSlotId]: React.createElement("aside", null),
+      },
+      [rootLayoutId, feedLayoutId],
+      [modalSlotBinding],
+      createInterceptionProof("/feed", "/photos/43", modalSlotId),
+    );
+
+    const next = createNextBfcacheIdMap({
+      current: {
+        [rootLayoutId]: "0",
+        [feedLayoutId]: "_b_4_",
+        [modalSlotId]: "_b_5_",
+      },
+      currentElements,
+      currentPathname: "/photos/42",
+      elements: nextElements,
+      nextPathname: "/photos/43",
+    });
+
+    expect(next[rootLayoutId]).toBe("0");
+    expect(next[feedLayoutId]).toBe("_b_4_");
+    expect(next[modalSlotId]).toMatch(/^_b_\d+_$/);
+    expect(next[modalSlotId]).not.toBe("_b_5_");
   });
 
   it("serializes and restores bfcache ids through history state", () => {
@@ -4507,12 +4591,45 @@ describe("app browser entry bfcacheId helpers", () => {
     expect(pending.action.bfcacheIds[pageX1Id]).toBe("_b_5_");
   });
 
+  it("mints redirected traverse target ids after restored ids are cleared", async () => {
+    const currentState = createState({
+      bfcacheIds: {
+        [rootLayoutId]: "0",
+        [groupLayoutId]: "0",
+        [pageX1Id]: "_b_4_",
+      },
+      elements: createBfcacheElements(pageX1Id),
+      layoutIds: [rootLayoutId, groupLayoutId],
+      navigationSnapshot: createClientNavigationRenderSnapshot("https://example.com/x/1", {}),
+      routeId: "route:/x/1",
+    });
+
+    const pending = await createPendingNavigationCommit({
+      payloadOrigin: FRESH_APP_NAVIGATION_PAYLOAD_ORIGIN,
+      currentState,
+      nextElements: Promise.resolve(createBfcacheElements(pageY1Id)),
+      navigationSnapshot: createClientNavigationRenderSnapshot("https://example.com/y/1", {}),
+      operationLane: "navigation",
+      renderId: 1,
+      // navigateRsc clears the source entry's restored ids before committing a
+      // redirected traverse target, otherwise restored ids would win over fresh
+      // ids for changed dynamic segments.
+      restoredBfcacheIds: null,
+      type: "traverse",
+    });
+
+    expect(pending.action.bfcacheIds[rootLayoutId]).toBe("0");
+    expect(pending.action.bfcacheIds[groupLayoutId]).toMatch(/^_b_\d+_$/);
+    expect(pending.action.bfcacheIds[groupLayoutId]).not.toBe("0");
+  });
+
   it("keeps future minted bfcache ids ahead of hydrated history state ids", () => {
     const hydrated = createHydratedBfcacheIdMap(createBfcacheElements(pageX1Id), {
       [pageX1Id]: "_b_900000_",
     });
     const next = createNextBfcacheIdMap({
       current: hydrated,
+      currentElements: createBfcacheElements(pageX1Id),
       currentPathname: "/x/1",
       elements: createBfcacheElements(pageX2Id),
       nextPathname: "/x/2",

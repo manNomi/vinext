@@ -146,6 +146,64 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     expect(replacedBfcacheId).not.toBe(replaceInitialBfcacheId);
   });
 
+  test("does not reuse restored bfcacheIds after a traverse redirect", async ({ page }) => {
+    await page.goto(`${BASE}${ROUTE}/x/1`);
+    await waitForAppRouterHydration(page);
+
+    await visibleTestId(page, "layout-input").fill("stale-layout-state");
+    const staleLayoutBfcacheId = await visibleTestId(page, "layout-bfcache-id").textContent();
+    const staleHistoryState = await page.evaluate(() => structuredClone(window.history.state));
+
+    await revealAndClick(page, `${ROUTE}/x/2`);
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
+
+    await page.evaluate(
+      ({ currentHref, redirectHref, staleHistoryState }) => {
+        window.history.pushState(staleHistoryState, "", redirectHref);
+        window.history.pushState(window.history.state, "", currentHref);
+      },
+      {
+        currentHref: `${ROUTE}/x/2`,
+        redirectHref: "/nextjs-compat/use-router-bfcache-id-redirect-to-y",
+        staleHistoryState,
+      },
+    );
+
+    await page.goBack();
+    await expect(page).toHaveURL(`${BASE}${ROUTE}/y/1`);
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/y/1`);
+    const redirectedLayoutBfcacheId = await visibleTestId(page, "layout-bfcache-id").textContent();
+    expect(redirectedLayoutBfcacheId).toMatch(/^_b_\d+_$/);
+    expect(redirectedLayoutBfcacheId).not.toBe(staleLayoutBfcacheId);
+    await expect(visibleTestId(page, "layout-input")).toHaveValue("");
+  });
+
+  test("mints fresh bfcacheIds for intercepted slot target changes and restores ids on back", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}/feed`);
+    await waitForAppRouterHydration(page);
+
+    await page.locator("#feed-photo-42-link").click();
+    await expect(visibleTestId(page, "photo-modal")).toContainText("Viewing photo 42");
+    const photo42BfcacheId = await visibleTestId(page, "photo-modal-bfcache-id").textContent();
+    expect(photo42BfcacheId).toMatch(/^_b_\d+_$/);
+    await visibleTestId(page, "photo-modal-input").fill("photo-42-state");
+
+    await page.locator("#modal-photo-43-link").click();
+    await expect(visibleTestId(page, "photo-modal")).toContainText("Viewing photo 43");
+    const photo43BfcacheId = await visibleTestId(page, "photo-modal-bfcache-id").textContent();
+    expect(photo43BfcacheId).toMatch(/^_b_\d+_$/);
+    expect(photo43BfcacheId).not.toBe(photo42BfcacheId);
+    await expect(visibleTestId(page, "photo-modal-input")).toHaveValue("");
+    await visibleTestId(page, "photo-modal-input").fill("photo-43-state");
+
+    await page.goBack();
+    await expect(visibleTestId(page, "photo-modal")).toContainText("Viewing photo 42");
+    await expect(visibleTestId(page, "photo-modal-bfcache-id")).toHaveText(photo42BfcacheId ?? "");
+    await expect(visibleTestId(page, "photo-modal-input")).not.toHaveValue("photo-43-state");
+  });
+
   test("preserves leaf form state across a server action refresh", async ({ page }) => {
     await page.goto(`${BASE}${ROUTE}/x/1`);
     await waitForAppRouterHydration(page);

@@ -1679,7 +1679,7 @@ function bootstrapHydration(rscStream: ReadableStream<Uint8Array>): void {
       consumeAppRouterScrollIntent(scrollIntent ?? null);
       return browserNavigationController.performHardNavigation(targetHref);
     };
-    const restoredBfcacheIds =
+    let restoredBfcacheIds =
       navigationKind === "traverse" ? readHistoryStateBfcacheIds(window.history.state) : null;
 
     try {
@@ -1744,6 +1744,33 @@ function bootstrapHydration(rscStream: ReadableStream<Uint8Array>): void {
           if (compatibilityDecision.kind === "hard-navigate") {
             performHardNavigationForScrollIntent(compatibilityDecision.hardNavigationTarget);
             return;
+          }
+          const cachedRedirectDecision = resolveRscRedirectLifecycleHop({
+            currentHref,
+            historyUpdateMode: currentHistoryMode ?? "replace",
+            origin: window.location.origin,
+            redirectDepth: redirectCount,
+            requestPreviousNextUrl,
+            responseUrl: cachedRoute.response.url,
+          });
+          if (cachedRedirectDecision.kind === "terminal-hard-navigation") {
+            if (cachedRedirectDecision.reason === "maxRedirectsExceeded") {
+              console.error(
+                "[vinext] Too many RSC redirects — aborting navigation to prevent infinite loop.",
+              );
+            }
+            performHardNavigationForScrollIntent(cachedRedirectDecision.href);
+            return;
+          }
+          if (cachedRedirectDecision.kind === "follow") {
+            if (navigationKind === "traverse") {
+              restoredBfcacheIds = null;
+            }
+            currentHref = cachedRedirectDecision.href;
+            currentHistoryMode = cachedRedirectDecision.historyUpdateMode;
+            currentPrevNextUrl = cachedRedirectDecision.previousNextUrl;
+            redirectCount = cachedRedirectDecision.redirectDepth;
+            continue;
           }
           // Check stale-navigation before and after createFromFetch. The pre-check
           // avoids wasted parse work; the post-check catches supersessions that
@@ -1941,6 +1968,13 @@ function bootstrapHydration(rscStream: ReadableStream<Uint8Array>): void {
           // and defer URL/history mutation to the eventual approved commit.
           // This keeps isPending true across all hops and avoids publishing a
           // destination URL before its RSC payload is lifecycle-approved.
+          // Traverse restored ids belong to the history entry being traversed
+          // to. Once a server redirect changes the target href, those ids no
+          // longer describe the redirected payload and must not win over fresh
+          // segment identities.
+          if (navigationKind === "traverse") {
+            restoredBfcacheIds = null;
+          }
           currentHref = redirectDecision.href;
           currentHistoryMode = redirectDecision.historyUpdateMode;
           currentPrevNextUrl = redirectDecision.previousNextUrl;
@@ -1977,7 +2011,12 @@ function bootstrapHydration(rscStream: ReadableStream<Uint8Array>): void {
             performHardNavigationForScrollIntent(resolvedTarget.href);
             return;
           }
+          if (navigationKind === "traverse") {
+            restoredBfcacheIds = null;
+          }
           currentHref = `${resolvedTarget.pathname}${resolvedTarget.search}${resolvedTarget.hash}`;
+          currentHistoryMode = currentHistoryMode ?? "replace";
+          currentPrevNextUrl = requestPreviousNextUrl;
           redirectCount += 1;
           continue;
         }

@@ -202,21 +202,53 @@ function getTreePathIdentityPrefix(pathname: string, treePath: string): string {
   return `/${segments.join("/")}`;
 }
 
+type AppElementsMetadata = ReturnType<typeof AppElementsWire.readMetadata>;
+
+function readAppElementsMetadata(elements: AppElements): AppElementsMetadata | null {
+  try {
+    return AppElementsWire.readMetadata(elements);
+  } catch {
+    return null;
+  }
+}
+
+function createActiveSlotIdentity(id: string, metadata: AppElementsMetadata | null): string | null {
+  const activeSlotBinding = metadata?.slotBindings.find((binding) => binding.slotId === id);
+  if (activeSlotBinding?.activeRouteId) {
+    return `${id}@${activeSlotBinding.activeRouteId}`;
+  }
+
+  const interception = metadata?.interception;
+  if (interception?.slotId !== id) return null;
+
+  return `${id}@${interception.targetRouteId}`;
+}
+
 /**
  * Legacy bridge for deriving a bfcache segment identity from AppElements wire
  * keys. Keep wire-key parsing contained here until Vinext has a route-manifest
  * semantic authority equivalent to Next.js CacheNode/segment-cache state.
  */
-function createBfcacheSegmentIdentity(id: string, pathname: string): string | null {
+function createBfcacheSegmentIdentity(
+  id: string,
+  options: { metadata: AppElementsMetadata | null; pathname: string },
+): string | null {
   const parsed = AppElementsWire.parseElementKey(id);
   if (!parsed) return null;
 
   if (parsed.kind === "page") {
-    return `${id}@${pathname}`;
+    return `${id}@${options.pathname}`;
   }
 
-  if (parsed.kind === "layout" || parsed.kind === "slot" || parsed.kind === "template") {
-    return `${id}@${getTreePathIdentityPrefix(pathname, parsed.treePath)}`;
+  if (parsed.kind === "slot") {
+    const activeSlotIdentity = createActiveSlotIdentity(id, options.metadata);
+    if (activeSlotIdentity !== null) return activeSlotIdentity;
+
+    return `${id}@${getTreePathIdentityPrefix(options.pathname, parsed.treePath)}`;
+  }
+
+  if (parsed.kind === "layout" || parsed.kind === "template") {
+    return `${id}@${getTreePathIdentityPrefix(options.pathname, parsed.treePath)}`;
   }
 
   return null;
@@ -270,6 +302,7 @@ export function createHydratedBfcacheIdMap(
 
 export function createNextBfcacheIdMap(options: {
   current: BfcacheIdMap;
+  currentElements: AppElements;
   currentPathname: string;
   elements: AppElements;
   nextPathname: string;
@@ -282,10 +315,18 @@ export function createNextBfcacheIdMap(options: {
     rememberBfcacheId(value);
   }
 
+  const currentMetadata = readAppElementsMetadata(options.currentElements);
+  const nextMetadata = readAppElementsMetadata(options.elements);
   const ids: Record<string, string> = {};
   for (const id of collectBfcacheSegmentIds(options.elements)) {
-    const currentIdentity = createBfcacheSegmentIdentity(id, options.currentPathname);
-    const nextIdentity = createBfcacheSegmentIdentity(id, options.nextPathname);
+    const currentIdentity = createBfcacheSegmentIdentity(id, {
+      metadata: currentMetadata,
+      pathname: options.currentPathname,
+    });
+    const nextIdentity = createBfcacheSegmentIdentity(id, {
+      metadata: nextMetadata,
+      pathname: options.nextPathname,
+    });
     const currentValue = currentIdentity === nextIdentity ? options.current[id] : undefined;
     // History traversals restore persisted ids first, matching segments keep
     // their current id, and newly-created segments mint a fresh opaque id.
@@ -667,6 +708,7 @@ export async function createPendingNavigationCommit(options: {
     action: {
       bfcacheIds: createNextBfcacheIdMap({
         current: options.currentState.bfcacheIds,
+        currentElements: options.currentState.elements,
         currentPathname: options.currentState.navigationSnapshot.pathname,
         elements,
         nextPathname: options.navigationSnapshot.pathname,
