@@ -103,7 +103,7 @@ import {
 import {
   FRESH_APP_NAVIGATION_PAYLOAD_ORIGIN,
   VISITED_CACHE_APP_NAVIGATION_PAYLOAD_ORIGIN,
-  createInitialBfcacheIdMap,
+  createHydratedBfcacheIdMap,
   createHistoryStateWithNavigationMetadata,
   createHistoryStateWithPreviousNextUrl,
   readHistoryStateBfcacheIds,
@@ -1018,9 +1018,12 @@ function BrowserRoot({
   const initialMetadata = AppElementsWire.readMetadata(resolvedElements);
   const [treeStateValue, setTreeStateValue] = useState<
     AppRouterState | Promise<AppRouterState> | MpaNavigationState
-  >({
+  >(() => ({
     activeOperation: null,
-    bfcacheIds: createInitialBfcacheIdMap(resolvedElements),
+    bfcacheIds: createHydratedBfcacheIdMap(
+      resolvedElements,
+      readHistoryStateBfcacheIds(window.history.state),
+    ),
     elements: resolvedElements,
     interception: initialMetadata.interception,
     interceptionContext: initialMetadata.interceptionContext,
@@ -1033,7 +1036,7 @@ function BrowserRoot({
     routeId: initialMetadata.routeId,
     slotBindings: initialMetadata.slotBindings,
     visibleCommitVersion: 0,
-  });
+  }));
   if (isMpaNavigationState(treeStateValue)) {
     performMpaNavigation(treeStateValue.href, treeStateValue.historyUpdateMode);
     throw unresolvedMpaNavigation;

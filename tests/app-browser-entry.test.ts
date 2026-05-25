@@ -50,6 +50,7 @@ import * as navigationShim from "../packages/vinext/src/shims/navigation.js";
 import {
   createHistoryStateWithNavigationMetadata,
   createHistoryStateWithPreviousNextUrl,
+  createHydratedBfcacheIdMap,
   createInitialBfcacheIdMap,
   createNextBfcacheIdMap,
   FRESH_APP_NAVIGATION_PAYLOAD_ORIGIN,
@@ -4315,6 +4316,32 @@ describe("app browser entry bfcacheId helpers", () => {
     });
   });
 
+  it("seeds hydration bfcache ids from history state for current rendered segments", () => {
+    expect(
+      createHydratedBfcacheIdMap(createBfcacheElements(pageX1Id), {
+        [rootLayoutId]: "0",
+        [pageX1Id]: "_b_10_",
+        [pageX2Id]: "_b_11_",
+      }),
+    ).toEqual({
+      [rootLayoutId]: "0",
+      [groupLayoutId]: "0",
+      [pageX1Id]: "_b_10_",
+    });
+  });
+
+  it("falls back to initial bfcache ids when history state has no current segment ids", () => {
+    expect(
+      createHydratedBfcacheIdMap(createBfcacheElements(pageX1Id), {
+        [pageX2Id]: "_b_11_",
+      }),
+    ).toEqual({
+      [rootLayoutId]: "0",
+      [groupLayoutId]: "0",
+      [pageX1Id]: "0",
+    });
+  });
+
   it("preserves shared segment ids and mints ids for fresh segments", () => {
     const current = {
       [rootLayoutId]: "0",
@@ -4478,6 +4505,21 @@ describe("app browser entry bfcacheId helpers", () => {
     });
 
     expect(pending.action.bfcacheIds[pageX1Id]).toBe("_b_5_");
+  });
+
+  it("keeps future minted bfcache ids ahead of hydrated history state ids", () => {
+    const hydrated = createHydratedBfcacheIdMap(createBfcacheElements(pageX1Id), {
+      [pageX1Id]: "_b_900000_",
+    });
+    const next = createNextBfcacheIdMap({
+      current: hydrated,
+      currentPathname: "/x/1",
+      elements: createBfcacheElements(pageX2Id),
+      nextPathname: "/x/2",
+    });
+
+    const freshIdNumber = Number(/^_b_(\d+)_$/.exec(next[pageX2Id] ?? "")?.[1]);
+    expect(freshIdNumber).toBeGreaterThan(900000);
   });
 });
 

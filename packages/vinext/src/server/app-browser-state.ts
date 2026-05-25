@@ -243,6 +243,31 @@ export function createInitialBfcacheIdMap(elements: AppElements): BfcacheIdMap {
   return ids;
 }
 
+export function createHydratedBfcacheIdMap(
+  elements: AppElements,
+  restored: BfcacheIdMap | null,
+): BfcacheIdMap {
+  if (restored === null) {
+    return createInitialBfcacheIdMap(elements);
+  }
+
+  const ids: Record<string, string> = {};
+  let hasRestoredId = false;
+  for (const id of collectBfcacheSegmentIds(elements)) {
+    const restoredValue = restored[id];
+    if (restoredValue !== undefined) {
+      ids[id] = restoredValue;
+      hasRestoredId = true;
+      // Keep future fresh ids ahead of values restored from session history.
+      rememberBfcacheId(restoredValue);
+    } else {
+      ids[id] = INITIAL_BFCACHE_ID;
+    }
+  }
+
+  return hasRestoredId ? ids : createInitialBfcacheIdMap(elements);
+}
+
 export function createNextBfcacheIdMap(options: {
   current: BfcacheIdMap;
   currentPathname: string;

@@ -44,6 +44,31 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(x2BfcacheId ?? "");
   });
 
+  test("keeps restored bfcacheIds after hard reload of a history entry", async ({ page }) => {
+    await page.goto(`${BASE}${ROUTE}/x/1`);
+    await waitForAppRouterHydration(page);
+
+    const x1BfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
+    expect(x1BfcacheId).toBe("_b_0_");
+
+    await revealAndClick(page, `${ROUTE}/x/2`);
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
+    const x2BfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
+    expect(x2BfcacheId).toMatch(/^_b_\d+_$/);
+    expect(x2BfcacheId).not.toBe(x1BfcacheId);
+
+    await page.reload();
+    await waitForAppRouterHydration(page);
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
+    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(x2BfcacheId ?? "");
+
+    await visibleTestId(page, "leaf-input").fill("x2-state-after-reload");
+    await page.goBack();
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/1`);
+    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(x1BfcacheId ?? "");
+    await expect(visibleTestId(page, "leaf-input")).not.toHaveValue("x2-state-after-reload");
+  });
+
   test("resets leaf form state when re-entering a route via fresh push", async ({ page }) => {
     await page.goto(`${BASE}${ROUTE}/x/1`);
     await waitForAppRouterHydration(page);
