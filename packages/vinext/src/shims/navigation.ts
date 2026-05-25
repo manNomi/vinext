@@ -15,7 +15,10 @@ import { getNavigationRuntime, hasAppNavigationRuntime } from "../client/navigat
 import { notifyAppRouterTransitionStart } from "../client/instrumentation-client-state.js";
 import { AppElementsWire } from "../server/app-elements.js";
 import { resolveManifestNavigationInterceptionContext } from "../server/app-browser-interception-context.js";
-import { createExternalHistoryStatePreservingMetadata } from "../server/app-history-state.js";
+import {
+  createExternalHistoryStatePreservingMetadata,
+  createHashOnlyHistoryStatePreservingNavigationMetadata,
+} from "../server/app-history-state.js";
 import {
   createRscRequestHeaders,
   createRscRequestUrl,
@@ -1398,20 +1401,6 @@ export function saveScrollPosition(): void {
   );
 }
 
-function createHashOnlyHistoryState(state: unknown): unknown {
-  if (!state || typeof state !== "object") return null;
-
-  const current = state as Record<string, unknown>;
-  const next: Record<string, unknown> = {};
-  if ("__vinext_previousNextUrl" in current) {
-    next.__vinext_previousNextUrl = current.__vinext_previousNextUrl;
-  }
-  if ("__vinext_bfcacheIds" in current) {
-    next.__vinext_bfcacheIds = current.__vinext_bfcacheIds;
-  }
-  return Object.keys(next).length > 0 ? next : null;
-}
-
 function commitHashOnlyHistoryState(href: string, mode: "push" | "replace", scroll: boolean): void {
   const commitAppRouterHashNavigation = getNavigationRuntime()?.functions.commitHashNavigation;
   if (commitAppRouterHashNavigation) {
@@ -1419,7 +1408,7 @@ function commitHashOnlyHistoryState(href: string, mode: "push" | "replace", scro
     return;
   }
 
-  const historyState = createHashOnlyHistoryState(window.history.state);
+  const historyState = createHashOnlyHistoryStatePreservingNavigationMetadata(window.history.state);
   if (mode === "replace") {
     replaceHistoryStateWithoutNotify(historyState, "", href);
   } else {

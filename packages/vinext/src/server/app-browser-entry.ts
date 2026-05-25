@@ -103,10 +103,10 @@ import {
 import {
   FRESH_APP_NAVIGATION_PAYLOAD_ORIGIN,
   VISITED_CACHE_APP_NAVIGATION_PAYLOAD_ORIGIN,
-  createHydratedBfcacheIdMap,
   createHistoryStateWithNavigationMetadata,
-  createHistoryStateWithPreviousNextUrl,
+  createInitialBfcacheIdMap,
   readHistoryStateBfcacheIds,
+  readHistoryStateBfcacheVersion,
   readHistoryStatePreviousNextUrl,
   readHistoryStateTraversalIndex,
   isCacheRestorableAppPayloadMetadata,
@@ -283,9 +283,31 @@ let browserRouterStateHasEverCommitted = false;
 let pendingNavigationRecoveryHref: string | null = null;
 const mpaNavigationScheduler = new AppBrowserMpaNavigationScheduler();
 const unresolvedMpaNavigation = new Promise<never>(() => {});
+const initialHistoryBfcacheVersion = readHistoryStateBfcacheVersion(window.history.state);
+// A new browser document does not retain Next's in-memory BFCache entries.
+// Treat bfcache ids persisted by an older document as stale so a hard reload
+// cannot restore/collide with pre-reload route identities.
+let currentBfcacheVersion =
+  initialHistoryBfcacheVersion === null ? 0 : initialHistoryBfcacheVersion + 1;
 let currentHistoryTraversalIndex: number | null =
   readHistoryStateTraversalIndex(window.history.state) ?? 0;
 let nextHistoryTraversalIndex: number = currentHistoryTraversalIndex;
+
+function isCurrentBfcacheVersion(state: unknown): boolean {
+  return (readHistoryStateBfcacheVersion(state) ?? 0) === currentBfcacheVersion;
+}
+
+function readCurrentBfcacheVersionHistoryIds(
+  state: unknown,
+): Readonly<Record<string, string>> | null {
+  const ids = readHistoryStateBfcacheIds(state);
+  if (ids === null) return null;
+  return isCurrentBfcacheVersion(state) ? ids : null;
+}
+
+function invalidateRestorableBfcacheIds(): void {
+  currentBfcacheVersion += 1;
+}
 
 function allocateNavigationHistoryTraversalIndex(
   historyUpdateMode: HistoryUpdateMode | undefined,
@@ -325,11 +347,12 @@ function commitHashOnlyNavigation(
     : readHistoryStatePreviousNextUrl(window.history.state);
   const bfcacheIds = hasBrowserRouterState()
     ? getBrowserRouterState().bfcacheIds
-    : readHistoryStateBfcacheIds(window.history.state);
+    : readCurrentBfcacheVersionHistoryIds(window.history.state);
   const historyState = createHistoryStateWithNavigationMetadata(
     createHashOnlyNavigationBaseHistoryState(historyUpdateMode, scroll),
     {
       bfcacheIds,
+      bfcacheVersion: bfcacheIds === null ? undefined : currentBfcacheVersion,
       previousNextUrl,
       traversalIndex: navigationHistoryIndex,
     },
@@ -417,6 +440,7 @@ function clearPrefetchState(): void {
 function clearClientNavigationCaches(): void {
   clearVisitedResponseCache();
   clearPrefetchState();
+  invalidateRestorableBfcacheIds();
 }
 
 function isSettledPrefetchCacheEntry(
@@ -537,16 +561,17 @@ function syncCurrentHistoryStatePreviousNextUrl(
   if (
     readHistoryStatePreviousNextUrl(window.history.state) === previousNextUrl &&
     (bfcacheIds === undefined ||
-      areBfcacheIdMapsEqual(readHistoryStateBfcacheIds(window.history.state), bfcacheIds))
+      (areBfcacheIdMapsEqual(readHistoryStateBfcacheIds(window.history.state), bfcacheIds) &&
+        isCurrentBfcacheVersion(window.history.state)))
   ) {
     return;
   }
 
-  const nextHistoryState = createHistoryStateWithPreviousNextUrl(
-    window.history.state,
-    previousNextUrl,
+  const nextHistoryState = createHistoryStateWithNavigationMetadata(window.history.state, {
     bfcacheIds,
-  );
+    bfcacheVersion: bfcacheIds === undefined ? undefined : currentBfcacheVersion,
+    previousNextUrl,
+  });
   // First attempt: use replaceHistoryStateWithoutNotify which fires no popstate
   // or hashchange events. If the browser accepted the state update (checked via
   // readHistoryStatePreviousNextUrl), we're done. The double-read is needed
@@ -557,7 +582,8 @@ function syncCurrentHistoryStatePreviousNextUrl(
   if (
     readHistoryStatePreviousNextUrl(window.history.state) === previousNextUrl &&
     (bfcacheIds === undefined ||
-      areBfcacheIdMapsEqual(readHistoryStateBfcacheIds(window.history.state), bfcacheIds))
+      (areBfcacheIdMapsEqual(readHistoryStateBfcacheIds(window.history.state), bfcacheIds) &&
+        isCurrentBfcacheVersion(window.history.state)))
   ) {
     return;
   }
@@ -614,6 +640,7 @@ function createNavigationCommitEffect(options: {
       preserveExistingState ? window.history.state : null,
       {
         bfcacheIds,
+        bfcacheVersion: currentBfcacheVersion,
         previousNextUrl,
         traversalIndex: navigationHistoryIndex,
       },
@@ -1020,10 +1047,7 @@ function BrowserRoot({
     AppRouterState | Promise<AppRouterState> | MpaNavigationState
   >(() => ({
     activeOperation: null,
-    bfcacheIds: createHydratedBfcacheIdMap(
-      resolvedElements,
-      readHistoryStateBfcacheIds(window.history.state),
-    ),
+    bfcacheIds: createInitialBfcacheIdMap(resolvedElements),
     elements: resolvedElements,
     interception: initialMetadata.interception,
     interceptionContext: initialMetadata.interceptionContext,
@@ -1106,6 +1130,7 @@ function BrowserRoot({
     replaceHistoryStateWithoutNotify(
       createHistoryStateWithNavigationMetadata(window.history.state, {
         bfcacheIds: treeState.bfcacheIds,
+        bfcacheVersion: currentBfcacheVersion,
         previousNextUrl: treeState.previousNextUrl,
         traversalIndex: currentHistoryTraversalIndex,
       }),
@@ -1680,7 +1705,11 @@ function bootstrapHydration(rscStream: ReadableStream<Uint8Array>): void {
       return browserNavigationController.performHardNavigation(targetHref);
     };
     let restoredBfcacheIds =
-      navigationKind === "traverse" ? readHistoryStateBfcacheIds(window.history.state) : null;
+      navigationKind === "traverse"
+        ? readCurrentBfcacheVersionHistoryIds(
+            activeTraversalIntent?.historyState ?? window.history.state,
+          )
+        : null;
 
     try {
       const shouldUsePendingRouterState = programmaticTransition;

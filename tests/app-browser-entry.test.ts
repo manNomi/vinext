@@ -50,7 +50,6 @@ import * as navigationShim from "../packages/vinext/src/shims/navigation.js";
 import {
   createHistoryStateWithNavigationMetadata,
   createHistoryStateWithPreviousNextUrl,
-  createHydratedBfcacheIdMap,
   createInitialBfcacheIdMap,
   createNextBfcacheIdMap,
   FRESH_APP_NAVIGATION_PAYLOAD_ORIGIN,
@@ -58,6 +57,7 @@ import {
   createPendingNavigationCommit,
   isCacheRestorableAppPayloadMetadata,
   readHistoryStateBfcacheIds,
+  readHistoryStateBfcacheVersion,
   readHistoryStatePreviousNextUrl,
   readHistoryStateTraversalIndex,
   resolveInterceptionContextFromPreviousNextUrl,
@@ -4316,30 +4316,22 @@ describe("app browser entry bfcacheId helpers", () => {
     });
   });
 
-  it("seeds hydration bfcache ids from history state for current rendered segments", () => {
-    expect(
-      createHydratedBfcacheIdMap(createBfcacheElements(pageX1Id), {
-        [rootLayoutId]: "0",
-        [pageX1Id]: "_b_10_",
-        [pageX2Id]: "_b_11_",
-      }),
-    ).toEqual({
+  it("does not seed hydration bfcache ids from history state", () => {
+    // Next generates the public "_b_0_" hydration sentinel from an internal
+    // zero cache node on both SSR and initial client hydration. Persisted
+    // history maps are restored only for explicit back/forward traversals.
+    const persistedHistoryIds = {
       [rootLayoutId]: "0",
-      [groupLayoutId]: "0",
       [pageX1Id]: "_b_10_",
-    });
-  });
+      [pageX2Id]: "_b_11_",
+    };
 
-  it("falls back to initial bfcache ids when history state has no current segment ids", () => {
-    expect(
-      createHydratedBfcacheIdMap(createBfcacheElements(pageX1Id), {
-        [pageX2Id]: "_b_11_",
-      }),
-    ).toEqual({
+    expect(createInitialBfcacheIdMap(createBfcacheElements(pageX1Id))).toEqual({
       [rootLayoutId]: "0",
       [groupLayoutId]: "0",
       [pageX1Id]: "0",
     });
+    expect(persistedHistoryIds[pageX1Id]).toBe("_b_10_");
   });
 
   it("preserves shared segment ids and mints ids for fresh segments", () => {
@@ -4549,16 +4541,23 @@ describe("app browser entry bfcacheId helpers", () => {
   });
 
   it("serializes and restores bfcache ids through history state", () => {
-    const state = createHistoryStateWithPreviousNextUrl({ __vinext_scrollY: 120 }, "/feed", {
-      [pageX1Id]: "_b_9_",
-    });
+    const state = createHistoryStateWithNavigationMetadata(
+      { __vinext_scrollY: 120 },
+      {
+        bfcacheIds: { [pageX1Id]: "_b_9_" },
+        bfcacheVersion: 3,
+        previousNextUrl: "/feed",
+      },
+    );
 
     expect(state).toEqual({
       __vinext_bfcacheIds: { [pageX1Id]: "_b_9_" },
+      __vinext_bfcacheVersion: 3,
       __vinext_previousNextUrl: "/feed",
       __vinext_scrollY: 120,
     });
     expect(readHistoryStateBfcacheIds(state)).toEqual({ [pageX1Id]: "_b_9_" });
+    expect(readHistoryStateBfcacheVersion(state)).toBe(3);
   });
 
   it("uses restored history bfcache ids for traversal commits", async () => {
@@ -4623,16 +4622,16 @@ describe("app browser entry bfcacheId helpers", () => {
     expect(pending.action.bfcacheIds[groupLayoutId]).not.toBe("0");
   });
 
-  it("keeps future minted bfcache ids ahead of hydrated history state ids", () => {
-    const hydrated = createHydratedBfcacheIdMap(createBfcacheElements(pageX1Id), {
-      [pageX1Id]: "_b_900000_",
-    });
+  it("keeps future minted bfcache ids ahead of restored history state ids", () => {
     const next = createNextBfcacheIdMap({
-      current: hydrated,
+      current: createInitialBfcacheIdMap(createBfcacheElements(pageX1Id)),
       currentElements: createBfcacheElements(pageX1Id),
       currentPathname: "/x/1",
       elements: createBfcacheElements(pageX2Id),
       nextPathname: "/x/2",
+      restored: {
+        [pageX1Id]: "_b_900000_",
+      },
     });
 
     const freshIdNumber = Number(/^_b_(\d+)_$/.exec(next[pageX2Id] ?? "")?.[1]);

@@ -27,24 +27,22 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await waitForAppRouterHydration(page);
 
     await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText("_b_0_");
+    const x1BfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
 
     await revealAndClick(page, `${ROUTE}/x/2`);
     await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
     const x2BfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
     expect(x2BfcacheId).toMatch(/^_b_\d+_$/);
-
-    await revealAndClick(page, `${ROUTE}/x/1`);
-    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/1`);
-    const freshX1BfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
-    expect(freshX1BfcacheId).toMatch(/^_b_\d+_$/);
-    expect(freshX1BfcacheId).not.toBe(x2BfcacheId);
+    await expect(visibleTestId(page, "leaf-input")).toHaveValue("");
 
     await page.goBack();
-    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
-    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(x2BfcacheId ?? "");
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/1`);
+    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(x1BfcacheId ?? "");
   });
 
-  test("keeps restored bfcacheIds after hard reload of a history entry", async ({ page }) => {
+  test("uses the hydration bfcacheId after hard reload without leaking leaf state on back", async ({
+    page,
+  }) => {
     await page.goto(`${BASE}${ROUTE}/x/1`);
     await waitForAppRouterHydration(page);
 
@@ -60,12 +58,15 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await page.reload();
     await waitForAppRouterHydration(page);
     await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
-    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(x2BfcacheId ?? "");
+    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText("_b_0_");
+    await expect(visibleTestId(page, "leaf-bfcache-id")).not.toHaveText(x2BfcacheId ?? "");
 
     await visibleTestId(page, "leaf-input").fill("x2-state-after-reload");
     await page.goBack();
     await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/1`);
-    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(x1BfcacheId ?? "");
+    const postReloadBackBfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
+    expect(postReloadBackBfcacheId).toMatch(/^_b_\d+_$/);
+    expect(postReloadBackBfcacheId).not.toBe(x1BfcacheId);
     await expect(visibleTestId(page, "leaf-input")).not.toHaveValue("x2-state-after-reload");
   });
 
@@ -73,11 +74,15 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await page.goto(`${BASE}${ROUTE}/x/1`);
     await waitForAppRouterHydration(page);
 
+    const initialBfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
     await visibleTestId(page, "leaf-input").fill("hello");
     await revealAndClick(page, `${ROUTE}/x/2`);
     await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
 
     await revealAndClick(page, `${ROUTE}/x/1`);
+    const freshBfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
+    expect(freshBfcacheId).toMatch(/^_b_\d+_$/);
+    expect(freshBfcacheId).not.toBe(initialBfcacheId);
     await expect(visibleTestId(page, "leaf-input")).toHaveValue("");
   });
 
@@ -220,5 +225,32 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
 
     await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
     await expect(visibleTestId(page, "leaf-input")).toHaveValue("server-action-state");
+  });
+
+  test("does not restore stale history bfcacheIds after a server action invalidates cache", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}${ROUTE}/x/1`);
+    await waitForAppRouterHydration(page);
+
+    const staleX1BfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
+    await visibleTestId(page, "leaf-input").fill("stale-x1-state");
+
+    await revealAndClick(page, `${ROUTE}/x/2`);
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
+
+    const actionResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" && response.url().includes(`${ROUTE}/x/2.rsc`),
+    );
+    await visibleTestId(page, "server-action-refresh").click();
+    await actionResponse;
+
+    await page.goBack();
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/1`);
+    const restoredAfterInvalidation = await visibleTestId(page, "leaf-bfcache-id").textContent();
+    expect(restoredAfterInvalidation).toMatch(/^_b_\d+_$/);
+    expect(restoredAfterInvalidation).not.toBe(staleX1BfcacheId);
+    await expect(visibleTestId(page, "leaf-input")).toHaveValue("");
   });
 });

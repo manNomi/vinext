@@ -249,6 +249,7 @@ describe("next/navigation shim", () => {
     const previousDocument = (globalThis as any).document;
     let historyState: unknown = {
       __vinext_bfcacheIds: { "page:/current": "_b_1_" },
+      __vinext_bfcacheVersion: 2,
       __vinext_previousNextUrl: "/feed",
       customState: "drop-me",
     };
@@ -316,6 +317,7 @@ describe("next/navigation shim", () => {
       expect(pushState).toHaveBeenCalledWith(
         {
           __vinext_bfcacheIds: { "page:/current": "_b_1_" },
+          __vinext_bfcacheVersion: 2,
           __vinext_previousNextUrl: "/feed",
         },
         "",

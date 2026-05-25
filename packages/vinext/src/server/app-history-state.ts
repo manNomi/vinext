@@ -4,6 +4,7 @@ import type { TraverseDirection } from "./navigation-planner.js";
 const VINEXT_PREVIOUS_NEXT_URL_HISTORY_STATE_KEY = "__vinext_previousNextUrl";
 const VINEXT_HISTORY_INDEX_HISTORY_STATE_KEY = "__vinext_historyIndex";
 const VINEXT_BFCACHE_IDS_HISTORY_STATE_KEY = "__vinext_bfcacheIds";
+const VINEXT_BFCACHE_VERSION_HISTORY_STATE_KEY = "__vinext_bfcacheVersion";
 
 type HistoryStateRecord = {
   [key: string]: unknown;
@@ -41,6 +42,7 @@ export function createHistoryStateWithNavigationMetadata(
   state: unknown,
   metadata: {
     bfcacheIds?: BfcacheIdMap | null;
+    bfcacheVersion?: number | null;
     previousNextUrl: string | null;
     traversalIndex?: number | null;
   },
@@ -64,8 +66,17 @@ export function createHistoryStateWithNavigationMetadata(
   if (metadata.bfcacheIds !== undefined) {
     if (metadata.bfcacheIds === null || Object.keys(metadata.bfcacheIds).length === 0) {
       delete nextState[VINEXT_BFCACHE_IDS_HISTORY_STATE_KEY];
+      delete nextState[VINEXT_BFCACHE_VERSION_HISTORY_STATE_KEY];
     } else {
       nextState[VINEXT_BFCACHE_IDS_HISTORY_STATE_KEY] = { ...metadata.bfcacheIds };
+    }
+  }
+
+  if (metadata.bfcacheVersion !== undefined) {
+    if (isValidBfcacheVersion(metadata.bfcacheVersion)) {
+      nextState[VINEXT_BFCACHE_VERSION_HISTORY_STATE_KEY] = metadata.bfcacheVersion;
+    } else {
+      delete nextState[VINEXT_BFCACHE_VERSION_HISTORY_STATE_KEY];
     }
   }
 
@@ -79,6 +90,7 @@ export function createExternalHistoryStatePreservingMetadata(
   const previousNextUrl = readHistoryStatePreviousNextUrl(currentHistoryState);
   const traversalIndex = readHistoryStateTraversalIndex(currentHistoryState);
   const bfcacheIds = readHistoryStateBfcacheIds(currentHistoryState);
+  const bfcacheVersion = readHistoryStateBfcacheVersion(currentHistoryState);
 
   if (previousNextUrl === null && traversalIndex === null && bfcacheIds === null) {
     return callerState;
@@ -86,6 +98,7 @@ export function createExternalHistoryStatePreservingMetadata(
 
   return createHistoryStateWithNavigationMetadata(callerState, {
     bfcacheIds,
+    bfcacheVersion: bfcacheIds === null ? undefined : bfcacheVersion,
     previousNextUrl,
     traversalIndex,
   });
@@ -96,7 +109,7 @@ export function readHistoryStatePreviousNextUrl(state: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function isBfcacheSegmentId(id: string): boolean {
+export function isBfcacheSegmentId(id: string): boolean {
   const parsed = AppElementsWire.parseElementKey(id);
   return (
     parsed?.kind === "layout" ||
@@ -120,6 +133,31 @@ export function readHistoryStateBfcacheIds(state: unknown): BfcacheIdMap | null 
     ids[key] = id;
   }
   return ids;
+}
+
+function isValidBfcacheVersion(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+export function readHistoryStateBfcacheVersion(state: unknown): number | null {
+  const value = cloneHistoryState(state)[VINEXT_BFCACHE_VERSION_HISTORY_STATE_KEY];
+  return isValidBfcacheVersion(value) ? value : null;
+}
+
+export function createHashOnlyHistoryStatePreservingNavigationMetadata(state: unknown): unknown {
+  const previousNextUrl = readHistoryStatePreviousNextUrl(state);
+  const bfcacheIds = readHistoryStateBfcacheIds(state);
+  const bfcacheVersion = readHistoryStateBfcacheVersion(state);
+
+  if (previousNextUrl === null && bfcacheIds === null) {
+    return null;
+  }
+
+  return createHistoryStateWithNavigationMetadata(null, {
+    bfcacheIds,
+    bfcacheVersion: bfcacheIds === null ? undefined : bfcacheVersion,
+    previousNextUrl,
+  });
 }
 
 function isValidHistoryTraversalIndex(value: unknown): value is number {
