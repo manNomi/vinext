@@ -59,6 +59,7 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await waitForAppRouterHydration(page);
     await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
     await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText("_b_0_");
+    const reloadedX2BfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
     await expect(visibleTestId(page, "leaf-bfcache-id")).not.toHaveText(x2BfcacheId ?? "");
 
     await visibleTestId(page, "leaf-input").fill("x2-state-after-reload");
@@ -68,6 +69,10 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     expect(postReloadBackBfcacheId).toMatch(/^_b_\d+_$/);
     expect(postReloadBackBfcacheId).not.toBe(x1BfcacheId);
     await expect(visibleTestId(page, "leaf-input")).not.toHaveValue("x2-state-after-reload");
+
+    await page.goForward();
+    await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
+    await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(reloadedX2BfcacheId ?? "");
   });
 
   test("resets leaf form state when re-entering a route via fresh push", async ({ page }) => {

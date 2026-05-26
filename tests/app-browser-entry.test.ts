@@ -4560,6 +4560,28 @@ describe("app browser entry bfcacheId helpers", () => {
     expect(readHistoryStateBfcacheVersion(state)).toBe(3);
   });
 
+  it("drops bfcache version metadata when bfcache ids are cleared", () => {
+    const state = createHistoryStateWithNavigationMetadata(
+      {
+        __vinext_bfcacheIds: { [pageX1Id]: "_b_9_" },
+        __vinext_bfcacheVersion: 3,
+        custom: "preserve",
+      },
+      {
+        bfcacheIds: {},
+        bfcacheVersion: 4,
+        previousNextUrl: "/feed",
+      },
+    );
+
+    expect(state).toEqual({
+      __vinext_previousNextUrl: "/feed",
+      custom: "preserve",
+    });
+    expect(readHistoryStateBfcacheIds(state)).toBeNull();
+    expect(readHistoryStateBfcacheVersion(state)).toBeNull();
+  });
+
   it("uses restored history bfcache ids for traversal commits", async () => {
     const currentState = createState({
       bfcacheIds: {

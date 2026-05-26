@@ -48,6 +48,9 @@ export function createHistoryStateWithNavigationMetadata(
   },
 ): HistoryStateRecord | null {
   const nextState = cloneHistoryState(state);
+  const bfcacheIdsWereCleared =
+    metadata.bfcacheIds !== undefined &&
+    (metadata.bfcacheIds === null || Object.keys(metadata.bfcacheIds).length === 0);
 
   if (metadata.previousNextUrl === null) {
     delete nextState[VINEXT_PREVIOUS_NEXT_URL_HISTORY_STATE_KEY];
@@ -64,7 +67,7 @@ export function createHistoryStateWithNavigationMetadata(
   }
 
   if (metadata.bfcacheIds !== undefined) {
-    if (metadata.bfcacheIds === null || Object.keys(metadata.bfcacheIds).length === 0) {
+    if (bfcacheIdsWereCleared) {
       delete nextState[VINEXT_BFCACHE_IDS_HISTORY_STATE_KEY];
       delete nextState[VINEXT_BFCACHE_VERSION_HISTORY_STATE_KEY];
     } else {
@@ -73,7 +76,9 @@ export function createHistoryStateWithNavigationMetadata(
   }
 
   if (metadata.bfcacheVersion !== undefined) {
-    if (isValidBfcacheVersion(metadata.bfcacheVersion)) {
+    if (bfcacheIdsWereCleared) {
+      delete nextState[VINEXT_BFCACHE_VERSION_HISTORY_STATE_KEY];
+    } else if (isValidBfcacheVersion(metadata.bfcacheVersion)) {
       nextState[VINEXT_BFCACHE_VERSION_HISTORY_STATE_KEY] = metadata.bfcacheVersion;
     } else {
       delete nextState[VINEXT_BFCACHE_VERSION_HISTORY_STATE_KEY];

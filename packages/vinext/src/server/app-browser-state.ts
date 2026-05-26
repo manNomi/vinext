@@ -144,8 +144,11 @@ type PendingNavigationCommitDispositionDecision =
   | DispatchPendingNavigationCommitDispositionDecision
   | NonDispatchPendingNavigationCommitDispositionDecision;
 
-let nextBfcacheId = 0;
 const INITIAL_BFCACHE_ID = "0";
+// Monotonic within a single browser document. Full reloads reset the counter,
+// while the browser entry's document-scoped version gate prevents old history
+// ids from being restored into the new document and colliding with fresh mints.
+let nextBfcacheId = 0;
 
 function rememberBfcacheId(value: string): void {
   const match = /^_b_(\d+)_$/.exec(value);
@@ -205,7 +208,7 @@ function readAppElementsMetadata(elements: AppElements): AppElementsMetadata | n
 
 function createActiveSlotIdentity(id: string, metadata: AppElementsMetadata | null): string | null {
   const activeSlotBinding = metadata?.slotBindings.find((binding) => binding.slotId === id);
-  if (activeSlotBinding?.activeRouteId) {
+  if (activeSlotBinding?.activeRouteId != null && activeSlotBinding.activeRouteId !== "") {
     return `${id}@${activeSlotBinding.activeRouteId}`;
   }
 
@@ -296,6 +299,9 @@ export function createNextBfcacheIdMap(options: {
     const currentValue = currentIdentity === nextIdentity ? options.current[id] : undefined;
     // History traversals restore persisted ids first, matching segments keep
     // their current id, and newly-created segments mint a fresh opaque id.
+    // Restored ids intentionally win over identity-matching: the target entry's
+    // ids were authoritative when that entry was created, and traversal must
+    // faithfully restore them even if the segment's identity has since changed.
     const value = options.restored?.[id] ?? currentValue ?? mintBfcacheId();
     ids[id] = value;
     rememberBfcacheId(value);

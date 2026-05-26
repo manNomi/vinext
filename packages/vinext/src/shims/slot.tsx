@@ -122,7 +122,8 @@ function warnTransportMetadataEntry(id: string): void {
 }
 
 function BfcacheSlotBoundary({ content, id }: { content: React.ReactNode; id: string }) {
-  const SegmentContext = BfcacheSegmentIdContext!;
+  const SegmentContext = BfcacheSegmentIdContext;
+  if (!SegmentContext) return <>{content}</>;
   return <SegmentContext.Provider value={id}>{content}</SegmentContext.Provider>;
 }
 

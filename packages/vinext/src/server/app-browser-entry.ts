@@ -1047,6 +1047,10 @@ function BrowserRoot({
     AppRouterState | Promise<AppRouterState> | MpaNavigationState
   >(() => ({
     activeOperation: null,
+    // A hard reload starts a new browser document without Next.js's
+    // in-memory CacheNode/Activity tree. Hydrate the new document on the
+    // zero sentinel and rely on the document-scoped bfcache version gate to
+    // reject stale ids persisted by previous documents.
     bfcacheIds: createInitialBfcacheIdMap(resolvedElements),
     elements: resolvedElements,
     interception: initialMetadata.interception,
