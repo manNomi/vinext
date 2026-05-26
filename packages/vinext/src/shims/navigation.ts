@@ -1735,7 +1735,7 @@ const _appRouter = {
 };
 
 function formatPublicBfcacheId(value: string | null | undefined): string {
-  if (!value || value === _appRouter.bfcacheId) return "_b_0_";
+  if (!value || value === "0") return "_b_0_";
   return value;
 }
 
