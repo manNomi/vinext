@@ -394,6 +394,7 @@ function emitStaticMetadataFiles(
     if (route.isDynamic) continue;
 
     const outputPath = metadataOutputPath(route.servedUrl);
+    // scanMetadataFiles controls servedUrl; this remains defensive against malformed route data.
     if (!outputPath) continue;
 
     const fullPath = path.join(outDir, ...outputPath.split("/"));
