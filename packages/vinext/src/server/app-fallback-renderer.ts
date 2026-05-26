@@ -74,6 +74,16 @@ type AppFallbackRendererOptions<TModule extends AppPageModule = AppPageModule> =
   ssrLoader: () => Promise<AppPageSsrHandler>;
 };
 
+type AppFallbackRendererCallContext = {
+  /**
+   * Whether the matched (or invoking) route opts into Next.js' edge runtime via
+   * `export const runtime = "edge"`. Propagated so boundary/error/not-found
+   * responses carry `x-edge-runtime: 1` for edge routes, matching the page
+   * render path. Defaults to `false` when no route is matched.
+   */
+  isEdgeRuntime?: boolean;
+};
+
 type AppFallbackRenderer<TModule extends AppPageModule = AppPageModule> = {
   renderErrorBoundary: (
     route: AppPageBoundaryRoute<TModule> | null,
@@ -83,6 +93,7 @@ type AppFallbackRenderer<TModule extends AppPageModule = AppPageModule> = {
     matchedParams: AppPageParams | undefined,
     scriptNonce: string | undefined,
     middlewareContext: AppPageMiddlewareContext,
+    callContext?: AppFallbackRendererCallContext,
   ) => Promise<Response | null>;
   renderHttpAccessFallback: (
     route: AppPageBoundaryRoute<TModule> | null,
@@ -96,6 +107,7 @@ type AppFallbackRenderer<TModule extends AppPageModule = AppPageModule> = {
     },
     scriptNonce: string | undefined,
     middlewareContext: AppPageMiddlewareContext,
+    callContext?: AppFallbackRendererCallContext,
   ) => Promise<Response | null>;
   renderNotFound: (
     route: AppPageBoundaryRoute<TModule> | null,
@@ -104,6 +116,7 @@ type AppFallbackRenderer<TModule extends AppPageModule = AppPageModule> = {
     matchedParams: AppPageParams | undefined,
     scriptNonce: string | undefined,
     middlewareContext: AppPageMiddlewareContext,
+    callContext?: AppFallbackRendererCallContext,
   ) => Promise<Response | null>;
 };
 
@@ -160,6 +173,7 @@ export function createAppFallbackRenderer<TModule extends AppPageModule>(
       opts,
       scriptNonce,
       middlewareContext,
+      callContext,
     ) {
       // global-not-found.tsx replaces the root layout for route-miss 404s.
       // Only applies when:
@@ -187,6 +201,7 @@ export function createAppFallbackRenderer<TModule extends AppPageModule>(
             getFontStyles: fontProviders.getFontStyles,
             getNavigationContext,
             globalErrorModule: effectiveGlobalErrorModule,
+            isEdgeRuntime: callContext?.isEdgeRuntime,
             isRscRequest,
             layoutModules: [],
             loadSsrHandler: ssrLoader,
@@ -222,6 +237,7 @@ export function createAppFallbackRenderer<TModule extends AppPageModule>(
         getFontStyles: fontProviders.getFontStyles,
         getNavigationContext,
         globalErrorModule: effectiveGlobalErrorModule,
+        isEdgeRuntime: callContext?.isEdgeRuntime,
         isRscRequest,
         layoutModules: opts?.layouts ?? null,
         loadSsrHandler: ssrLoader,
@@ -242,7 +258,15 @@ export function createAppFallbackRenderer<TModule extends AppPageModule>(
       });
     },
 
-    renderNotFound(route, isRscRequest, request, matchedParams, scriptNonce, middlewareContext) {
+    renderNotFound(
+      route,
+      isRscRequest,
+      request,
+      matchedParams,
+      scriptNonce,
+      middlewareContext,
+      callContext,
+    ) {
       return this.renderHttpAccessFallback(
         route,
         404,
@@ -251,6 +275,7 @@ export function createAppFallbackRenderer<TModule extends AppPageModule>(
         { matchedParams },
         scriptNonce,
         middlewareContext,
+        callContext,
       );
     },
 
@@ -262,6 +287,7 @@ export function createAppFallbackRenderer<TModule extends AppPageModule>(
       matchedParams,
       scriptNonce,
       middlewareContext,
+      callContext,
     ) {
       return renderAppPageErrorBoundary({
         basePath,
@@ -276,6 +302,7 @@ export function createAppFallbackRenderer<TModule extends AppPageModule>(
         getFontStyles: fontProviders.getFontStyles,
         getNavigationContext,
         globalErrorModule: effectiveGlobalErrorModule,
+        isEdgeRuntime: callContext?.isEdgeRuntime,
         isRscRequest,
         loadSsrHandler: ssrLoader,
         makeThenableParams,
