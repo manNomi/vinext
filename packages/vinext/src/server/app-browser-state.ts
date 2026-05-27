@@ -208,7 +208,7 @@ function readAppElementsMetadata(elements: AppElements): AppElementsMetadata | n
 
 function createActiveSlotIdentity(id: string, metadata: AppElementsMetadata | null): string | null {
   const activeSlotBinding = metadata?.slotBindings.find((binding) => binding.slotId === id);
-  if (activeSlotBinding?.activeRouteId != null && activeSlotBinding.activeRouteId !== "") {
+  if (activeSlotBinding?.activeRouteId != null) {
     return `${id}@${activeSlotBinding.activeRouteId}`;
   }
 
