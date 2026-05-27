@@ -13,6 +13,7 @@
 import * as React from "react";
 import { getNavigationRuntime, hasAppNavigationRuntime } from "../client/navigation-runtime.js";
 import { notifyAppRouterTransitionStart } from "../client/instrumentation-client-state.js";
+import { INITIAL_BFCACHE_ID, PUBLIC_INITIAL_BFCACHE_ID } from "../server/app-bfcache-id.js";
 import { AppElementsWire } from "../server/app-elements.js";
 import { resolveManifestNavigationInterceptionContext } from "../server/app-browser-interception-context.js";
 import {
@@ -1615,7 +1616,7 @@ function releaseScheduledAppRouterNavigationAfterCurrentTask(release: () => void
  * Internal callers in this file continue to use `_appRouter` for brevity.
  */
 const _appRouter = {
-  bfcacheId: "0",
+  bfcacheId: INITIAL_BFCACHE_ID,
   push(href: string, options?: { scroll?: boolean }): void {
     assertSafeNavigationUrl(href);
     if (isServer) return;
@@ -1735,7 +1736,7 @@ const _appRouter = {
 };
 
 function formatPublicBfcacheId(value: string | null | undefined): string {
-  if (!value || value === "0") return "_b_0_";
+  if (!value || value === INITIAL_BFCACHE_ID) return PUBLIC_INITIAL_BFCACHE_ID;
   return value;
 }
 

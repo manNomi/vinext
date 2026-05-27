@@ -35,6 +35,7 @@ import {
 import type { ClientNavigationRenderSnapshot } from "vinext/shims/navigation";
 import { normalizePathnameForRouteMatch } from "../routing/utils.js";
 import { normalizePath } from "./normalize-path.js";
+import { INITIAL_BFCACHE_ID } from "./app-bfcache-id.js";
 import { isBfcacheSegmentId, type BfcacheIdMap } from "./app-history-state.js";
 
 export {
@@ -144,7 +145,6 @@ type PendingNavigationCommitDispositionDecision =
   | DispatchPendingNavigationCommitDispositionDecision
   | NonDispatchPendingNavigationCommitDispositionDecision;
 
-const INITIAL_BFCACHE_ID = "0";
 // Monotonic within a single browser document. Full reloads reset the counter,
 // while the browser entry's document-scoped version gate prevents old history
 // ids from being restored into the new document and colliding with fresh mints.
