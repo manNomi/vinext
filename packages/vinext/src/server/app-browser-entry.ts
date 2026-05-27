@@ -556,16 +556,24 @@ function areBfcacheIdMapsEqual(
   return aEntries.every(([key, value]) => b[key] === value);
 }
 
+function isHistoryStateNavigationMetadataInSync(
+  state: unknown,
+  previousNextUrl: string | null,
+  bfcacheIds?: Readonly<Record<string, string>> | null,
+): boolean {
+  return (
+    readHistoryStatePreviousNextUrl(state) === previousNextUrl &&
+    (bfcacheIds === undefined ||
+      (areBfcacheIdMapsEqual(readHistoryStateBfcacheIds(state), bfcacheIds) &&
+        isCurrentBfcacheVersion(state)))
+  );
+}
+
 function syncCurrentHistoryStatePreviousNextUrl(
   previousNextUrl: string | null,
   bfcacheIds?: Readonly<Record<string, string>> | null,
 ): void {
-  if (
-    readHistoryStatePreviousNextUrl(window.history.state) === previousNextUrl &&
-    (bfcacheIds === undefined ||
-      (areBfcacheIdMapsEqual(readHistoryStateBfcacheIds(window.history.state), bfcacheIds) &&
-        isCurrentBfcacheVersion(window.history.state)))
-  ) {
+  if (isHistoryStateNavigationMetadataInSync(window.history.state, previousNextUrl, bfcacheIds)) {
     return;
   }
 
@@ -581,12 +589,7 @@ function syncCurrentHistoryStatePreviousNextUrl(
   // replaceState calls when called in rapid succession (e.g. back-to-back
   // navigation commits). The fallback fires only when the state didn't stick.
   replaceHistoryStateWithoutNotify(nextHistoryState, "", window.location.href);
-  if (
-    readHistoryStatePreviousNextUrl(window.history.state) === previousNextUrl &&
-    (bfcacheIds === undefined ||
-      (areBfcacheIdMapsEqual(readHistoryStateBfcacheIds(window.history.state), bfcacheIds) &&
-        isCurrentBfcacheVersion(window.history.state)))
-  ) {
+  if (isHistoryStateNavigationMetadataInSync(window.history.state, previousNextUrl, bfcacheIds)) {
     return;
   }
   window.history.replaceState(nextHistoryState, "", window.location.href);
