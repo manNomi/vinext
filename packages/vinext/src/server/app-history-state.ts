@@ -158,6 +158,9 @@ export function createHashOnlyHistoryStatePreservingNavigationMetadata(state: un
     return null;
   }
 
+  // Traversal indices are assigned by the App Router browser entry's
+  // commitHashOnlyNavigation path. This shim fallback only preserves metadata
+  // that can be safely transported without the browser router runtime.
   return createHistoryStateWithNavigationMetadata(null, {
     bfcacheIds,
     bfcacheVersion: bfcacheIds === null ? undefined : bfcacheVersion,

@@ -551,6 +551,8 @@ function areBfcacheIdMapsEqual(
   const aEntries = Object.entries(a);
   const bEntries = Object.entries(b);
   if (aEntries.length !== bEntries.length) return false;
+  // Equal lengths make this bidirectional: if every a entry exists in b with
+  // the same value, b cannot contain an extra distinct key.
   return aEntries.every(([key, value]) => b[key] === value);
 }
 

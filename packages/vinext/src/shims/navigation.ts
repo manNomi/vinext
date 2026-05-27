@@ -1752,8 +1752,11 @@ function readBfcacheIdFromContext(): string {
     const segmentId = React.useContext(segmentContext);
     const idMap = React.useContext(idMapContext);
     return formatPublicBfcacheId(segmentId ? idMap?.[segmentId] : null);
-  } catch {
+  } catch (error) {
     // Low-level tests and direct module calls can hit this outside render.
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[vinext] readBfcacheIdFromContext failed:", error);
+    }
     return formatPublicBfcacheId(null);
   }
 }
