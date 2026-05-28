@@ -1751,7 +1751,7 @@ function readBfcacheIdFromContext(): string {
   try {
     const segmentId = React.useContext(segmentContext);
     const idMap = React.useContext(idMapContext);
-    return formatPublicBfcacheId(segmentId ? idMap?.[segmentId] : null);
+    return formatPublicBfcacheId(segmentId !== null ? idMap?.[segmentId] : null);
   } catch (error) {
     // Low-level tests and direct module calls can hit this outside render.
     if (process.env.NODE_ENV !== "production") {

@@ -155,6 +155,41 @@ describe("next/navigation shim", () => {
     ).toBe("<span>_b_7_</span>");
   });
 
+  it("useRouter() treats an empty string segment id as a valid context key", async () => {
+    const React = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const navigation = await import("../packages/vinext/src/shims/navigation.js");
+    const { AppRouterContext } =
+      await import("../packages/vinext/src/shims/internal/app-router-context.js");
+    const BfcacheIdMapContext = navigation.getBfcacheIdMapContext();
+    const BfcacheSegmentIdContext = navigation.getBfcacheSegmentIdContext();
+    if (!AppRouterContext || !BfcacheIdMapContext || !BfcacheSegmentIdContext) {
+      throw new Error("Expected bfcache contexts");
+    }
+
+    function Probe() {
+      return React.createElement("span", null, navigation.useRouter().bfcacheId);
+    }
+
+    expect(
+      renderToStaticMarkup(
+        React.createElement(
+          AppRouterContext.Provider,
+          { value: navigation.appRouterInstance },
+          React.createElement(
+            BfcacheIdMapContext.Provider,
+            { value: { "": "_b_9_" } },
+            React.createElement(
+              BfcacheSegmentIdContext.Provider,
+              { value: "" },
+              React.createElement(Probe),
+            ),
+          ),
+        ),
+      ),
+    ).toBe("<span>_b_9_</span>");
+  });
+
   it("useRouter() materializes the initial bfcacheId in Next-compatible format", async () => {
     const React = await import("react");
     const { renderToStaticMarkup } = await import("react-dom/server");
