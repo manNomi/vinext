@@ -1,6 +1,11 @@
 /**
  * Next.js Compat E2E: useRouter().bfcacheId
  * Ported from: https://github.com/vercel/next.js/blob/56d95137fd6d84f4bc1e5ef2bb31e0136d5fad9c/test/e2e/app-dir/use-router-bfcache-id/use-router-bfcache-id.test.ts
+ *
+ * Next.js also covers Activity-backed form-state preservation on browser back.
+ * Vinext does not implement React Activity yet, so those assertions are
+ * intentionally omitted here; these tests focus on bfcacheId semantics and
+ * same-segment DOM state that vinext preserves today.
  */
 
 import { test, expect } from "@playwright/test";
@@ -123,12 +128,14 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await waitForAppRouterHydration(page);
 
     const initialBfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
+    await visibleTestId(page, "leaf-input").fill("same-segment-state");
     await revealAndClick(page, `${ROUTE}/x/1#section`);
     await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
 
     await revealAndClick(page, `${ROUTE}/x/1?q=2`);
     await expect(visibleTestId(page, "search")).toHaveAttribute("data-value", "q=2");
     await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
+    await expect(visibleTestId(page, "leaf-input")).toHaveValue("same-segment-state");
 
     await visibleTestId(page, "refresh").click();
     await expect(visibleTestId(page, "leaf-bfcache-id")).toHaveText(initialBfcacheId ?? "");
