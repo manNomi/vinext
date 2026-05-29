@@ -374,7 +374,7 @@ function createAppPageSlotBindings<
       state === "active"
         ? options.interception?.slotId === slotId
           ? options.interception.targetRouteId
-          : AppElementsWire.encodeRouteId(options.routePath, options.interceptionContext)
+          : AppElementsWire.encodeRouteId(options.routePath, null)
         : null;
     bindings.push({
       ...(activeRouteId !== null ? { activeRouteId } : {}),
@@ -500,7 +500,7 @@ export function buildAppPageElements<
       rootLayoutTreePath,
       routeId,
       slotBindings: createAppPageSlotBindings(options.route, layoutEntries, resolveSlotOverride, {
-        interception: options.interception ?? null,
+        interception: renderIdentity?.interception ?? options.interception ?? null,
         interceptionContext,
         routePath: options.routePath,
       }),
