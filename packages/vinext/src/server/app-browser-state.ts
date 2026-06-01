@@ -151,6 +151,8 @@ type PendingNavigationCommitDispositionDecision =
 let nextBfcacheId = 0;
 
 function rememberBfcacheId(value: string): void {
+  // The hydration sentinel is the raw "0" value and intentionally does not
+  // advance the counter; fresh ids start at "_b_1_".
   const match = /^_b_(\d+)_$/.exec(value);
   if (!match) return;
   nextBfcacheId = Math.max(nextBfcacheId, Number(match[1]));
@@ -302,6 +304,8 @@ export function createNextBfcacheIdMap(options: {
     // Restored ids intentionally win over identity-matching: the target entry's
     // ids were authoritative when that entry was created, and traversal must
     // faithfully restore them even if the segment's identity has since changed.
+    // Callers must clear restored ids before this point when traversal redirects
+    // change the target href, because stale history ids otherwise win here.
     const value = options.restored?.[id] ?? currentValue ?? mintBfcacheId();
     ids[id] = value;
     rememberBfcacheId(value);

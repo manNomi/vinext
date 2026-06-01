@@ -1714,6 +1714,9 @@ function bootstrapHydration(rscStream: ReadableStream<Uint8Array>): void {
       consumeAppRouterScrollIntent(scrollIntent ?? null);
       return browserNavigationController.performHardNavigation(targetHref);
     };
+    // Traversal restores history-state ids before identity matching. Any
+    // redirect hop that changes currentHref must null this before commit so
+    // stale ids from the pre-redirect history entry cannot win.
     let restoredBfcacheIds =
       navigationKind === "traverse"
         ? readCurrentBfcacheVersionHistoryIds(

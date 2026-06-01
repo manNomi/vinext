@@ -3,9 +3,11 @@
  * Ported from: https://github.com/vercel/next.js/blob/56d95137fd6d84f4bc1e5ef2bb31e0136d5fad9c/test/e2e/app-dir/use-router-bfcache-id/use-router-bfcache-id.test.ts
  *
  * Next.js also covers Activity-backed form-state preservation on browser back.
- * Vinext does not implement React Activity yet, so those assertions are
- * intentionally omitted here; these tests focus on bfcacheId semantics and
- * same-segment DOM state that vinext preserves today.
+ * Vinext does not implement React Activity yet, so form-state-on-back
+ * assertions are intentionally omitted here; these tests focus on bfcacheId
+ * identity semantics. Same-segment DOM state preservation (e.g. input values
+ * surviving search-param navigation) is tested where it works today without
+ * Activity.
  */
 
 import { test, expect } from "@playwright/test";
@@ -22,6 +24,14 @@ async function revealAndClick(page: Page, href: string) {
 
 function visibleTestId(page: Page, testId: string) {
   return page.locator(`[data-testid="${testId}"]:visible`).first();
+}
+
+function waitForServerActionResponse(page: Page, pathname: string) {
+  return page.waitForResponse((response) => {
+    if (response.request().method() !== "POST") return false;
+    const responsePathname = new URL(response.url()).pathname;
+    return responsePathname === pathname || responsePathname === `${pathname}.rsc`;
+  });
 }
 
 test.describe("Next.js compat: useRouter().bfcacheId", () => {
@@ -228,10 +238,7 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     const initialBfcacheId = await visibleTestId(page, "leaf-bfcache-id").textContent();
     await visibleTestId(page, "leaf-input").fill("server-action-state");
 
-    const actionResponse = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" && response.url().includes(`${ROUTE}/x/1.rsc`),
-    );
+    const actionResponse = waitForServerActionResponse(page, `${ROUTE}/x/1`);
     await visibleTestId(page, "server-action-refresh").click();
     await actionResponse;
 
@@ -251,10 +258,7 @@ test.describe("Next.js compat: useRouter().bfcacheId", () => {
     await revealAndClick(page, `${ROUTE}/x/2`);
     await expect(visibleTestId(page, "pathname")).toHaveText(`${ROUTE}/x/2`);
 
-    const actionResponse = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" && response.url().includes(`${ROUTE}/x/2.rsc`),
-    );
+    const actionResponse = waitForServerActionResponse(page, `${ROUTE}/x/2`);
     await visibleTestId(page, "server-action-refresh").click();
     await actionResponse;
 
